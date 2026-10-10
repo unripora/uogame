@@ -1,0 +1,33 @@
+﻿<!DOCTYPE html>
+<html lang=\"zh\">
+<head>
+<meta charset=\"utf-8\">
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+<title>点击计数器 - 拾游集测试源</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;color:#fff}
+.game{text-align:center}
+h1{font-size:1.8em;margin-bottom:30px;color:#e94560}
+#score{font-size:5em;font-weight:900;color:#0f3460;margin:20px 0;user-select:none}
+button{font-size:1.5em;padding:16px 48px;border:none;border-radius:50px;background:#e94560;color:#fff;cursor:pointer;font-weight:700;box-shadow:0 8px 24px rgba(233,69,96,.4);transition:transform .1s}
+button:active{transform:scale(.95)}
+.tip{margin-top:24px;color:#888;font-size:.9em}
+</style>
+</head>
+<body>
+<div class=\"game\">
+<h1>🎯 点击计数器</h1>
+<div id=\"score\">0</div>
+<button onclick=\"tap()\">点我 +1</button>
+<div class=\"tip\">测试「游戏能正常运行 + 跨源 iframe 不崩」</div>
+</div>
+<script>
+let n = 0;
+function tap(){
+  n++;
+  document.getElementById('score').textContent = n;
+}
+</script>
+</body>
+</html>

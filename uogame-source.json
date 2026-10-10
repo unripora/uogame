@@ -1,0 +1,16 @@
+﻿{
+  \"protocol\": \"uogame-source\",
+  \"version\": 1,
+  \"type\": \"static\",
+  \"name\": \"拾游集测试源\",
+  \"baseUrl\": \"https://unripora.github.io/uogame\",
+  \"manifest\": \"manifest.json\",
+  \"capabilities\": {
+    \"browse\": true,
+    \"search\": true,
+    \"detail\": true,
+    \"stream\": true,
+    \"offline\": false,
+    \"local\": false
+  }
+}
