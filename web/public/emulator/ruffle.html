@@ -1,0 +1,2016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>UOGame Flash 模拟器 (Ruffle)</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800;900&family=Noto+Sans+SC:wght@400;700;900&display=swap"
+        rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0b0f;
+            font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #ffffff;
+        }
+
+        #ruffle-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #ruffle-container ruffle-embed,
+        #ruffle-container ruffle-object,
+        #ruffle-container ruffle-player {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        /* ROM 选择遮罩层 */
+        #rom-selector-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: radial-gradient(circle at top right, rgba(239, 68, 68, 0.15), rgba(0, 0, 0, 0.95));
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px;
+            animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .selector-panel {
+            width: 100%;
+            max-width: 520px;
+            background: rgba(22, 22, 32, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 20px 22px;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            max-height: 85vh;
+            position: relative;
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+
+        .selector-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .selector-title-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+
+        .selector-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            color: #ffffff;
+            line-height: 1.1;
+        }
+
+        .console-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.2;
+            background: rgba(249, 115, 22, 0.2);
+            color: #fdba74;
+            border: 1px solid rgba(249, 115, 22, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .close-selector-btn {
+            position: relative;
+            top: auto;
+            right: auto;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .close-selector-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+            transform: scale(1.05);
+        }
+
+        .close-selector-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* 选项卡 (Tabs) 胶囊滑动样式 */
+        .tabs-container {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 3px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+
+        .tab-button {
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.45);
+            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            white-space: nowrap;
+        }
+
+        .tab-button:hover {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .tab-button.active {
+            background: rgba(249, 115, 22, 0.2);
+            color: #fdba74;
+            box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15);
+        }
+
+        .search-box {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .search-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 12px 16px 12px 40px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .search-input:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(249, 115, 22, 0.4);
+            box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.15);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            opacity: 0.4;
+            pointer-events: none;
+            color: #ffffff;
+        }
+
+        .rom-list {
+            flex: 1;
+            overflow-y: auto;
+            margin-right: -8px;
+            padding-right: 8px;
+        }
+
+        .rom-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .rom-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .rom-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 18px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        .rom-item:hover {
+            background: rgba(249, 115, 22, 0.15);
+            border-color: rgba(249, 115, 22, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .rom-item:active {
+            transform: scale(0.98);
+        }
+
+        .rom-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            flex-shrink: 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+        }
+
+        .rom-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+
+        .rom-play-btn {
+            font-size: 11px;
+            font-weight: 800;
+            color: #f97316;
+            background: rgba(249, 115, 22, 0.15);
+            padding: 6px 12px;
+            border-radius: 10px;
+            transition: all 0.2s;
+        }
+
+        .rom-item:hover .rom-play-btn {
+            background: #f97316;
+            color: #ffffff;
+        }
+
+        .empty-tip {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* 极奢平滑切换加载遮罩层 */
+        #transition-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 999;
+            background: #0b0b0f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 1;
+            transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
+            pointer-events: auto;
+        }
+
+        #transition-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .transition-bg-glow {
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.25) 0%, rgba(249, 115, 22, 0.15) 50%, rgba(0, 0, 0, 0) 70%);
+            border-radius: 50%;
+            filter: blur(40px);
+            animation: pulseGlow 3s infinite alternate cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(0.85); opacity: 0.6; }
+            100% { transform: scale(1.15); opacity: 0.9; }
+        }
+
+        .transition-card {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .transition-icon-wrap {
+            position: relative;
+            width: 72px;
+            height: 72px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .transition-ring {
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            border: 2.5px solid transparent;
+            border-top-color: #ef4444;
+            border-right-color: #f97316;
+            animation: spinRing 1.1s linear infinite;
+        }
+
+        @keyframes spinRing {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .transition-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            font-weight: 900;
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(239, 68, 68, 0.4);
+        }
+
+        .transition-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+            max-width: 260px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .transition-badge {
+            font-size: 10px;
+            font-weight: 900;
+            color: #fdba74;
+            background: rgba(249, 115, 22, 0.15);
+            border: 1px solid rgba(249, 115, 22, 0.25);
+            padding: 3px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 22px;
+        }
+
+        .transition-percentage {
+            font-size: 36px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #fed7aa, #f97316, #ef4444);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+
+        .transition-status {
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            max-width: 280px;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* ========================================================= */
+        /* 📱 移动端 Flash 虚拟按键层 (Virtual Gamepad System)         */
+        /* ========================================================= */
+        #flash-virtual-gamepad {
+            position: fixed;
+            inset: 0;
+            z-index: 500;
+            pointer-events: none;
+            display: none;
+            opacity: var(--vpad-opacity, 0.85);
+            transition: opacity 0.3s ease;
+        }
+
+        /* 顶部迷你控制栏 */
+        .vpad-top-bar {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: auto;
+            z-index: 520;
+        }
+
+        .vpad-pill-btn {
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 11px;
+            font-weight: 800;
+            padding: 5px 12px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            transition: all 0.2s;
+        }
+
+        .vpad-pill-btn:active {
+            transform: scale(0.92);
+            background: rgba(249, 115, 22, 0.4);
+        }
+
+        /* 左侧十字方向键 */
+        .vpad-dpad-container {
+            position: absolute;
+            left: max(16px, env(safe-area-inset-left));
+            bottom: max(18px, env(safe-area-inset-bottom));
+            width: calc(150px * var(--vpad-scale, 1));
+            height: calc(150px * var(--vpad-scale, 1));
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        .vpad-dpad-base {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+        }
+
+        .dpad-cross-v, .dpad-cross-h {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        .dpad-cross-v {
+            width: 34%;
+            height: 92%;
+            top: 4%;
+            left: 33%;
+        }
+        .dpad-cross-h {
+            height: 34%;
+            width: 92%;
+            top: 33%;
+            left: 4%;
+        }
+
+        .dpad-btn {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 16px;
+            font-weight: 900;
+            transition: background 0.1s, transform 0.1s;
+            cursor: pointer;
+        }
+
+        .dpad-btn[data-dir="up"] {
+            top: 4%; left: 33%; width: 34%; height: 32%;
+            border-radius: 12px 12px 0 0;
+        }
+        .dpad-btn[data-dir="down"] {
+            bottom: 4%; left: 33%; width: 34%; height: 32%;
+            border-radius: 0 0 12px 12px;
+        }
+        .dpad-btn[data-dir="left"] {
+            left: 4%; top: 33%; width: 32%; height: 34%;
+            border-radius: 12px 0 0 12px;
+        }
+        .dpad-btn[data-dir="right"] {
+            right: 4%; top: 33%; width: 32%; height: 34%;
+            border-radius: 0 12px 12px 0;
+        }
+
+        .dpad-btn.active {
+            background: rgba(249, 115, 22, 0.6) !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 16px rgba(249, 115, 22, 0.8);
+        }
+
+        .dpad-center {
+            position: absolute;
+            top: 36%; left: 36%; width: 28%; height: 28%;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+        }
+
+        /* 右侧动作按键区 (经典弧形与菱形网格布局) */
+        .vpad-actions-container {
+            position: absolute;
+            right: max(16px, env(safe-area-inset-right));
+            bottom: max(18px, env(safe-area-inset-bottom));
+            width: calc(180px * var(--vpad-scale, 1));
+            height: calc(160px * var(--vpad-scale, 1));
+            pointer-events: auto;
+            touch-action: none;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: calc(8px * var(--vpad-scale, 1));
+            align-items: center;
+            justify-items: center;
+        }
+
+        .vpad-action-btn {
+            width: calc(48px * var(--vpad-scale, 1));
+            height: calc(48px * var(--vpad-scale, 1));
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            font-size: calc(11px * var(--vpad-scale, 1));
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            position: relative;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 2px;
+        }
+
+        .vpad-action-btn span.label {
+            line-height: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 92%;
+            text-align: center;
+            font-size: calc(11px * var(--vpad-scale, 1));
+            font-weight: 900;
+        }
+
+        .vpad-action-btn.active {
+            background: linear-gradient(135deg, #ef4444, #f97316) !important;
+            border-color: #ffedd5 !important;
+            transform: scale(0.92);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.9);
+        }
+
+        /* 底部辅助按键 (Space / Enter 等) */
+        .vpad-aux-bar {
+            position: absolute;
+            bottom: max(14px, env(safe-area-inset-bottom));
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+            pointer-events: auto;
+            white-space: nowrap;
+            z-index: 510;
+        }
+
+        .vpad-aux-btn {
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 14px;
+            padding: 5px 12px;
+            font-size: 10px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, 0.85);
+            cursor: pointer;
+            transition: all 0.1s;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 52px;
+        }
+
+        .vpad-aux-btn.active {
+            background: rgba(249, 115, 22, 0.7);
+            color: #fff;
+            transform: scale(0.92);
+        }
+
+        /* 📱 竖屏与横屏模式自适应优化 (Portrait vs Landscape Responsive Layout) */
+        @media (orientation: portrait) {
+            .vpad-dpad-container {
+                left: max(6px, env(safe-area-inset-left));
+                bottom: max(32px, env(safe-area-inset-bottom));
+                width: calc(130px * var(--vpad-scale, 1));
+                height: calc(130px * var(--vpad-scale, 1));
+            }
+            .vpad-actions-container {
+                right: max(6px, env(safe-area-inset-right));
+                bottom: max(32px, env(safe-area-inset-bottom));
+                width: calc(152px * var(--vpad-scale, 1));
+                height: calc(132px * var(--vpad-scale, 1));
+                gap: calc(5px * var(--vpad-scale, 1));
+            }
+            .vpad-action-btn {
+                width: calc(44px * var(--vpad-scale, 1));
+                height: calc(44px * var(--vpad-scale, 1));
+                font-size: calc(10px * var(--vpad-scale, 1));
+            }
+            .vpad-action-btn span.label {
+                font-size: calc(10px * var(--vpad-scale, 1));
+            }
+            .vpad-aux-bar {
+                bottom: max(6px, env(safe-area-inset-bottom));
+                gap: 8px;
+            }
+            .vpad-aux-btn {
+                padding: 4px 8px;
+                font-size: 9px;
+                min-width: 46px;
+                border-radius: 10px;
+            }
+        }
+
+        /* ========================================================= */
+        /* ⚙️ 虚拟按键自定义设置弹窗 (Key Settings Modal)              */
+        /* ========================================================= */
+        #flash-settings-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        .settings-panel {
+            width: 100%;
+            max-width: 480px;
+            max-height: 90vh;
+            background: rgba(20, 20, 30, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 28px;
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+            box-shadow: 0 32px 64px rgba(0, 0, 0, 0.8);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(249, 115, 22, 0.4) rgba(255, 255, 255, 0.04);
+        }
+
+        .settings-panel::-webkit-scrollbar,
+        .key-picker-grid::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .settings-panel::-webkit-scrollbar-track,
+        .key-picker-grid::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 4px;
+        }
+
+        .settings-panel::-webkit-scrollbar-thumb,
+        .key-picker-grid::-webkit-scrollbar-thumb {
+            background: rgba(249, 115, 22, 0.4);
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .settings-panel::-webkit-scrollbar-thumb:hover,
+        .key-picker-grid::-webkit-scrollbar-thumb:hover {
+            background: #f97316;
+        }
+
+        .settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .settings-title {
+            font-size: 17px;
+            font-weight: 900;
+            color: #ffffff;
+        }
+
+        .settings-section-title {
+            font-size: 12px;
+            font-weight: 800;
+            color: #fdba74;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        /* 预设切换网格 */
+        .preset-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .preset-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-card.active {
+            background: rgba(249, 115, 22, 0.2);
+            border-color: rgba(249, 115, 22, 0.5);
+            box-shadow: 0 4px 16px rgba(249, 115, 22, 0.2);
+        }
+
+        .preset-name {
+            font-size: 13px;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .preset-desc {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 2px;
+            line-height: 1.2;
+        }
+
+        /* 自定义按键映射列表 */
+        .mapping-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .mapping-item {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mapping-item:hover, .mapping-item.active {
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.15);
+        }
+
+        .mapping-btn-tag {
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .mapping-btn-val {
+            font-size: 14px;
+            font-weight: 900;
+            color: #fdba74;
+            font-family: monospace;
+        }
+
+        /* 键位选择器弹窗 */
+        #key-picker-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2200;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .key-picker-panel {
+            width: 100%;
+            max-width: 420px;
+            background: rgba(24, 24, 36, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 24px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .key-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 6px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        .key-choice-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px 4px;
+            font-size: 12px;
+            font-weight: 900;
+            color: #fff;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s;
+        }
+
+        .key-choice-btn:hover, .key-choice-btn:active {
+            background: #f97316;
+            color: #fff;
+            transform: scale(0.95);
+        }
+
+        /* 滑块与开关控制 */
+        .slider-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 10px 14px;
+        }
+
+        .slider-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .slider-input {
+            flex: 1;
+            max-width: 140px;
+            accent-color: #f97316;
+            cursor: pointer;
+        }
+
+        .size-group {
+            display: flex;
+            gap: 6px;
+        }
+
+        .size-btn {
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 800;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+        }
+
+        .size-btn.active {
+            background: #f97316;
+            color: #fff;
+            border-color: #f97316;
+        }
+
+        .settings-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 12px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            border: none;
+            color: #ffffff;
+            font-size: 13px;
+            font-weight: 900;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(249, 115, 22, 0.35);
+            transition: transform 0.15s;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.96);
+        }
+
+        .btn-secondary {
+            padding: 12px 18px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-secondary:active {
+            transform: scale(0.96);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="ruffle-container"></div>
+
+    <!-- 📱 移动端 Flash 虚拟按键层 -->
+    <div id="flash-virtual-gamepad">
+        <!-- 顶部快捷控制条 -->
+        <div class="vpad-top-bar">
+            <button class="vpad-pill-btn" onclick="openKeySettings()" title="自定义按键映射">
+                ⚙️ 按键映射
+            </button>
+            <button class="vpad-pill-btn" id="vpad-preset-quick-btn" onclick="cycleQuickPreset()" title="快速切换常用键位预设">
+                🎮 动作/格斗
+            </button>
+            <button class="vpad-pill-btn" id="vpad-toggle-btn" onclick="toggleVirtualPadVisibility()" title="隐藏/显示按键">
+                👁️ 隐藏手柄
+            </button>
+        </div>
+
+        <!-- 左侧十字方向键 (D-Pad) -->
+        <div class="vpad-dpad-container" id="vpad-dpad-area">
+            <div class="vpad-dpad-base">
+                <div class="dpad-cross-v"></div>
+                <div class="dpad-cross-h"></div>
+                <div class="dpad-btn" data-dir="up">▲</div>
+                <div class="dpad-btn" data-dir="down">▼</div>
+                <div class="dpad-btn" data-dir="left">◀</div>
+                <div class="dpad-btn" data-dir="right">▶</div>
+                <div class="dpad-center"></div>
+            </div>
+        </div>
+
+        <!-- 右侧动作按钮区 (6 键弧形布局) -->
+        <div class="vpad-actions-container" id="vpad-actions-area">
+            <div class="vpad-action-btn" data-btn="btn4">
+                <span class="label" id="lbl-btn4">U</span>
+            </div>
+            <div class="vpad-action-btn" data-btn="btn5">
+                <span class="label" id="lbl-btn5">I</span>
+            </div>
+            <div class="vpad-action-btn" data-btn="btn6">
+                <span class="label" id="lbl-btn6">O</span>
+            </div>
+            <div class="vpad-action-btn" data-btn="btn1">
+                <span class="label" id="lbl-btn1">J</span>
+            </div>
+            <div class="vpad-action-btn" data-btn="btn2">
+                <span class="label" id="lbl-btn2">K</span>
+            </div>
+            <div class="vpad-action-btn" data-btn="btn3">
+                <span class="label" id="lbl-btn3">L</span>
+            </div>
+        </div>
+
+        <!-- 底部辅助键 (Space / Enter 等) -->
+        <div class="vpad-aux-bar" id="vpad-aux-area">
+            <div class="vpad-aux-btn" data-btn="aux_space" id="lbl-aux-space">SPACE</div>
+            <div class="vpad-aux-btn" data-btn="aux_enter" id="lbl-aux-enter">ENTER</div>
+        </div>
+    </div>
+
+    <!-- ⚙️ 按键映射设置面板 -->
+    <div id="flash-settings-overlay">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <h3 class="settings-title">🎮 Flash 虚拟按键设置</h3>
+                <button class="close-selector-btn" onclick="closeKeySettings()">✕</button>
+            </div>
+
+            <!-- 1. 经典预设 -->
+            <div>
+                <div class="settings-section-title">常用游戏键位预设</div>
+                <div class="preset-grid">
+                    <div class="preset-card active" id="preset-card-fighting" onclick="applyPreset('fighting')">
+                        <div class="preset-name">动作 / 格斗模式</div>
+                        <div class="preset-desc">WASD 移动 + JKUI 普攻/跳跃/必杀</div>
+                    </div>
+                    <div class="preset-card" id="preset-card-arrows" onclick="applyPreset('arrows')">
+                        <div class="preset-name">经典方向键模式</div>
+                        <div class="preset-desc">↑↓←→ 方向 + Space 跳跃 + ZXC 技能</div>
+                    </div>
+                    <div class="preset-card" id="preset-card-shooter" onclick="applyPreset('shooter')">
+                        <div class="preset-name">射击 / 策略模式</div>
+                        <div class="preset-desc">WASD 移动 + J 开火 + 123 换武器</div>
+                    </div>
+                    <div class="preset-card" id="preset-card-touch" onclick="applyPreset('touch')">
+                        <div class="preset-name">纯触屏鼠标模式</div>
+                        <div class="preset-desc">隐藏虚拟键，适用于连连看/黄金矿工</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 自定义按键映射 -->
+            <div>
+                <div class="settings-section-title">自定义单个按键映射 (点击修改)</div>
+                <div class="mapping-grid">
+                    <div class="mapping-item" onclick="openKeyPicker('up', '方向键 上')">
+                        <span class="mapping-btn-tag">方向 ▲</span>
+                        <span class="mapping-btn-val" id="cfg-val-up">W</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('down', '方向键 下')">
+                        <span class="mapping-btn-tag">方向 ▼</span>
+                        <span class="mapping-btn-val" id="cfg-val-down">S</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('left', '方向键 左')">
+                        <span class="mapping-btn-tag">方向 ◀</span>
+                        <span class="mapping-btn-val" id="cfg-val-left">A</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('right', '方向键 右')">
+                        <span class="mapping-btn-tag">方向 ▶</span>
+                        <span class="mapping-btn-val" id="cfg-val-right">D</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn1', '动作键 1')">
+                        <span class="mapping-btn-tag">按键 1 (普攻)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn1">J</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn2', '动作键 2')">
+                        <span class="mapping-btn-tag">按键 2 (跳跃)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn2">K</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn3', '动作键 3')">
+                        <span class="mapping-btn-tag">按键 3 (冲刺)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn3">L</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn4', '动作键 4')">
+                        <span class="mapping-btn-tag">按键 4 (技能)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn4">U</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn5', '动作键 5')">
+                        <span class="mapping-btn-tag">按键 5 (大招)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn5">I</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('btn6', '动作键 6')">
+                        <span class="mapping-btn-tag">按键 6 (特技)</span>
+                        <span class="mapping-btn-val" id="cfg-val-btn6">O</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('aux_space', '辅助键 1')">
+                        <span class="mapping-btn-tag">辅助 1</span>
+                        <span class="mapping-btn-val" id="cfg-val-aux_space">SPACE</span>
+                    </div>
+                    <div class="mapping-item" onclick="openKeyPicker('aux_enter', '辅助键 2')">
+                        <span class="mapping-btn-tag">辅助 2</span>
+                        <span class="mapping-btn-val" id="cfg-val-aux_enter">ENTER</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. 外观微调 -->
+            <div>
+                <div class="settings-section-title">手柄外观与触感</div>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div class="slider-row">
+                        <span class="slider-label">按键透明度</span>
+                        <input type="range" min="20" max="100" value="85" class="slider-input" id="cfg-opacity-slider" oninput="updatePadOpacity(this.value)">
+                        <span id="cfg-opacity-val" style="font-size: 11px; font-weight: 800; width: 32px;">85%</span>
+                    </div>
+                    <div class="slider-row">
+                        <span class="slider-label">按键尺寸</span>
+                        <div class="size-group">
+                            <button class="size-btn" id="size-btn-sm" onclick="updatePadScale(0.85, 'sm')">小</button>
+                            <button class="size-btn active" id="size-btn-md" onclick="updatePadScale(1.0, 'md')">标准</button>
+                            <button class="size-btn" id="size-btn-lg" onclick="updatePadScale(1.18, 'lg')">大</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. 底部动作 -->
+            <div class="settings-actions">
+                <button class="btn-secondary" onclick="resetDefaultKeyConfig()">重置默认</button>
+                <button class="btn-primary" onclick="saveAndCloseKeySettings()">保存并生效</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🔑 键盘键位选择弹窗 -->
+    <div id="key-picker-overlay">
+        <div class="key-picker-panel">
+            <div class="settings-header">
+                <h4 style="font-size: 15px; font-weight: 900;" id="key-picker-title">选择映射的键盘按键</h4>
+                <button class="close-selector-btn" onclick="closeKeyPicker()">✕</button>
+            </div>
+            <div class="key-picker-grid" id="key-picker-grid"></div>
+        </div>
+    </div>
+
+    <!-- 加载遮罩层 -->
+    <div id="transition-overlay">
+        <div class="transition-bg-glow"></div>
+        <div class="transition-card">
+            <div class="transition-icon-wrap">
+                <div class="transition-ring"></div>
+                <div class="transition-icon" id="transition-icon-text">F</div>
+            </div>
+            <div class="transition-title" id="transition-title-text">Flash 游戏</div>
+            <div class="transition-badge">RUFFLE WASM FLASH EMULATOR</div>
+            <div class="transition-percentage" id="transition-percentage-text">0%</div>
+            <div class="transition-status" id="transition-status-text">⚡ 正在初始化 Flash 运行环境...</div>
+        </div>
+    </div>
+
+    <!-- ROM 选择遮罩层 -->
+    <div id="rom-selector-overlay">
+        <div class="selector-panel">
+            <div class="selector-header-bar">
+                <div class="selector-title-group">
+                    <div class="selector-title" id="selector-title-text">游戏列表 (0)</div>
+                    <span class="console-badge" id="console-label">Flash 游戏</span>
+                </div>
+                <div class="tabs-container">
+                    <div class="tab-button active" id="tab-current" onclick="switchTab('current')">当前目录</div>
+                    <div class="tab-button" id="tab-recent" onclick="switchTab('recent')">最近游玩</div>
+                </div>
+                <button class="close-selector-btn" onclick="closeRomSelector()" title="关闭列表">✕</button>
+            </div>
+
+            <div class="search-box">
+                <input type="text" id="search-input" class="search-input" placeholder="输入游戏名称搜索...">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            
+            <div class="rom-list" id="rom-list">
+                <div class="empty-tip">正在拉取目录下的游戏文件...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 动态载入 Ruffle 与虚拟手柄引擎 -->
+    <script>
+        function getQueryParam(name) {
+            const reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
+            const r = window.location.search.substr(1).match(reg);
+            if (r != null) return decodeURIComponent(r[2]);
+            return null;
+        }
+
+        // 兼容前端两种传参：?id=（历史）与 ?gameId=（当前 PlayView）
+        const gameId = getQueryParam("id") || getQueryParam("gameId");
+        const token = getQueryParam("token") || localStorage.getItem("uogame_token");
+        const initialRom = getQueryParam("rom");
+        const isMobileParam = getQueryParam("isMobile") === "true";
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || isMobileParam;
+
+        let rufflePlayer = null;
+        let romsList = [];
+        let activeTab = "current";
+        let currentSwfName = "";
+
+        /* ========================================================= */
+        /* 🕹️ 键盘键位注册表 (PC Key Definitions)                    */
+        /* ========================================================= */
+        const KEY_DATABASE = {
+            "W": { key: "w", code: "KeyW", keyCode: 87, label: "W", btnLabel: "W" },
+            "A": { key: "a", code: "KeyA", keyCode: 65, label: "A", btnLabel: "A" },
+            "S": { key: "s", code: "KeyS", keyCode: 83, label: "S", btnLabel: "S" },
+            "D": { key: "d", code: "KeyD", keyCode: 68, label: "D", btnLabel: "D" },
+            "UP": { key: "ArrowUp", code: "ArrowUp", keyCode: 38, label: "↑ (上)", btnLabel: "▲" },
+            "DOWN": { key: "ArrowDown", code: "ArrowDown", keyCode: 40, label: "↓ (下)", btnLabel: "▼" },
+            "LEFT": { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37, label: "← (左)", btnLabel: "◀" },
+            "RIGHT": { key: "ArrowRight", code: "ArrowRight", keyCode: 39, label: "→ (右)", btnLabel: "▶" },
+            "J": { key: "j", code: "KeyJ", keyCode: 74, label: "J (普攻)", btnLabel: "J" },
+            "K": { key: "k", code: "KeyK", keyCode: 75, label: "K (跳跃)", btnLabel: "K" },
+            "U": { key: "u", code: "KeyU", keyCode: 85, label: "U (技能)", btnLabel: "U" },
+            "I": { key: "i", code: "KeyI", keyCode: 73, label: "I (大招)", btnLabel: "I" },
+            "O": { key: "o", code: "KeyO", keyCode: 79, label: "O (特技)", btnLabel: "O" },
+            "L": { key: "l", code: "KeyL", keyCode: 76, label: "L (冲刺)", btnLabel: "L" },
+            "Z": { key: "z", code: "KeyZ", keyCode: 90, label: "Z (攻击)", btnLabel: "Z" },
+            "X": { key: "x", code: "KeyX", keyCode: 88, label: "X (技能)", btnLabel: "X" },
+            "C": { key: "c", code: "KeyC", keyCode: 67, label: "C (道具)", btnLabel: "C" },
+            "V": { key: "v", code: "KeyV", keyCode: 86, label: "V", btnLabel: "V" },
+            "SPACE": { key: " ", code: "Space", keyCode: 32, label: "SPACE (空格)", btnLabel: "SPACE" },
+            "ENTER": { key: "Enter", code: "Enter", keyCode: 13, label: "ENTER (回车)", btnLabel: "ENTER" },
+            "ESC": { key: "Escape", code: "Escape", keyCode: 27, label: "ESC (暂停)", btnLabel: "ESC" },
+            "SHIFT": { key: "Shift", code: "ShiftLeft", keyCode: 16, label: "SHIFT (加速)", btnLabel: "SHIFT" },
+            "CTRL": { key: "Control", code: "ControlLeft", keyCode: 17, label: "CTRL", btnLabel: "CTRL" },
+            "1": { key: "1", code: "Digit1", keyCode: 49, label: "1 (武器1)", btnLabel: "1" },
+            "2": { key: "2", code: "Digit2", keyCode: 50, label: "2 (武器2)", btnLabel: "2" },
+            "3": { key: "3", code: "Digit3", keyCode: 51, label: "3 (武器3)", btnLabel: "3" },
+            "4": { key: "4", code: "Digit4", keyCode: 52, label: "4 (武器4)", btnLabel: "4" },
+            "Q": { key: "q", code: "KeyQ", keyCode: 81, label: "Q", btnLabel: "Q" },
+            "E": { key: "e", code: "KeyE", keyCode: 69, label: "E", btnLabel: "E" },
+            "R": { key: "r", code: "KeyR", keyCode: 82, label: "R (换弹)", btnLabel: "R" },
+            "F": { key: "f", code: "KeyF", keyCode: 70, label: "F", btnLabel: "F" }
+        };
+
+        const PRESET_CONFIGS = {
+            "fighting": {
+                name: "动作 / 格斗模式",
+                shortName: "动作/格斗",
+                visible: true,
+                mapping: {
+                    up: "W", down: "S", left: "A", right: "D",
+                    btn1: "J", btn2: "K", btn3: "L",
+                    btn4: "U", btn5: "I", btn6: "O",
+                    aux_space: "SPACE", aux_enter: "ENTER"
+                }
+            },
+            "arrows": {
+                name: "经典方向键模式",
+                shortName: "经典方向",
+                visible: true,
+                mapping: {
+                    up: "UP", down: "DOWN", left: "LEFT", right: "RIGHT",
+                    btn1: "SPACE", btn2: "Z", btn3: "X",
+                    btn4: "C", btn5: "ENTER", btn6: "ESC",
+                    aux_space: "SPACE", aux_enter: "ENTER"
+                }
+            },
+            "shooter": {
+                name: "射击 / 策略模式",
+                shortName: "射击/策略",
+                visible: true,
+                mapping: {
+                    up: "W", down: "S", left: "A", right: "D",
+                    btn1: "J", btn2: "K", btn3: "R",
+                    btn4: "1", btn5: "2", btn6: "SPACE",
+                    aux_space: "SPACE", aux_enter: "ENTER"
+                }
+            },
+            "touch": {
+                name: "纯触屏鼠标模式",
+                shortName: "纯鼠标",
+                visible: false,
+                mapping: {
+                    up: "W", down: "S", left: "A", right: "D",
+                    btn1: "J", btn2: "K", btn3: "L",
+                    btn4: "U", btn5: "I", btn6: "O",
+                    aux_space: "SPACE", aux_enter: "ENTER"
+                }
+            }
+        };
+
+        let currentPadConfig = {
+            preset: "fighting",
+            visible: true,
+            opacity: 85,
+            scale: 1.0,
+            scaleTag: "md",
+            mapping: { ...PRESET_CONFIGS.fighting.mapping }
+        };
+
+        function loadSavedPadConfig() {
+            try {
+                const storageKey = "uogame_flash_vpad_" + (gameId || "global");
+                const saved = localStorage.getItem(storageKey) || localStorage.getItem("uogame_flash_vpad_global");
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    currentPadConfig = {
+                        ...currentPadConfig,
+                        ...parsed,
+                        mapping: { ...currentPadConfig.mapping, ...(parsed.mapping || {}) }
+                    };
+                }
+            } catch (e) { }
+            applyPadConfigToUI();
+        }
+
+        function savePadConfig() {
+            try {
+                const storageKey = "uogame_flash_vpad_" + (gameId || "global");
+                localStorage.setItem(storageKey, JSON.stringify(currentPadConfig));
+                localStorage.setItem("uogame_flash_vpad_global", JSON.stringify(currentPadConfig));
+            } catch (e) { }
+        }
+
+        function applyPadConfigToUI() {
+            const root = document.getElementById("flash-virtual-gamepad");
+            if (!root) return;
+
+            // 1. 是否可见
+            if (isTouchDevice && currentPadConfig.visible) {
+                root.style.display = "block";
+            } else {
+                root.style.display = "none";
+            }
+
+            // 2. 透明度与缩放
+            root.style.setProperty("--vpad-opacity", (currentPadConfig.opacity / 100).toString());
+            root.style.setProperty("--vpad-scale", (currentPadConfig.scale || 1.0).toString());
+
+            // 3. 按钮文字更新 (保证单行无换行显示)
+            const m = currentPadConfig.mapping;
+            for (const [btnKey, keyId] of Object.entries(m)) {
+                const lblEl = document.getElementById("lbl-" + btnKey.replace("_", "-"));
+                if (lblEl) {
+                    const info = KEY_DATABASE[keyId];
+                    lblEl.innerText = info ? (info.btnLabel || info.label || keyId) : keyId;
+                }
+                const cfgEl = document.getElementById("cfg-val-" + btnKey);
+                if (cfgEl) {
+                    cfgEl.innerText = keyId;
+                }
+            }
+
+            // 4. 预设高亮
+            document.querySelectorAll(".preset-card").forEach(el => el.classList.remove("active"));
+            const activePresetCard = document.getElementById("preset-card-" + currentPadConfig.preset);
+            if (activePresetCard) activePresetCard.classList.add("active");
+
+            // 5. 顶部快捷预设按钮文本
+            const quickBtn = document.getElementById("vpad-preset-quick-btn");
+            if (quickBtn) {
+                const pInfo = PRESET_CONFIGS[currentPadConfig.preset];
+                quickBtn.innerText = "🎮 " + (pInfo ? pInfo.shortName : "自定义");
+            }
+
+            // 6. 设置面板滑块与缩放按钮
+            const slider = document.getElementById("cfg-opacity-slider");
+            const sliderVal = document.getElementById("cfg-opacity-val");
+            if (slider) slider.value = currentPadConfig.opacity;
+            if (sliderVal) sliderVal.innerText = currentPadConfig.opacity + "%";
+
+            document.querySelectorAll(".size-btn").forEach(el => el.classList.remove("active"));
+            const activeSizeBtn = document.getElementById("size-btn-" + (currentPadConfig.scaleTag || "md"));
+            if (activeSizeBtn) activeSizeBtn.classList.add("active");
+        }
+
+        /* ========================================================= */
+        /* ⚡ Ruffle 键盘事件全链路派发引擎 (Dispatcher)                */
+        /* ========================================================= */
+        const activeKeys = new Set();
+
+        function dispatchRuffleKeyEvent(type, keyId) {
+            const keyInfo = KEY_DATABASE[keyId];
+            if (!keyInfo) return;
+
+            if (type === "keydown") {
+                if (activeKeys.has(keyId)) return;
+                activeKeys.add(keyId);
+                if (navigator.vibrate) {
+                    try { navigator.vibrate(12); } catch (e) { }
+                }
+            } else {
+                activeKeys.delete(keyId);
+            }
+
+            const eventInit = {
+                key: keyInfo.key,
+                code: keyInfo.code,
+                keyCode: keyInfo.keyCode,
+                which: keyInfo.keyCode,
+                charCode: keyInfo.keyCode,
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window
+            };
+
+            const evt = new KeyboardEvent(type, eventInit);
+
+            // 1. 派发给 document / window
+            document.dispatchEvent(evt);
+            window.dispatchEvent(evt);
+
+            // 2. 派发给 ruffle-player 及其内部 canvas
+            if (rufflePlayer) {
+                try {
+                    rufflePlayer.focus();
+                    rufflePlayer.dispatchEvent(evt);
+                    const canvas = rufflePlayer.shadowRoot
+                        ? rufflePlayer.shadowRoot.querySelector("canvas")
+                        : rufflePlayer.querySelector("canvas");
+                    if (canvas) {
+                        canvas.dispatchEvent(evt);
+                    }
+                } catch (e) { }
+            }
+        }
+
+        /* ========================================================= */
+        /* 🕹️ 虚拟手柄多点触控监听 (Touch Handlers)                   */
+        /* ========================================================= */
+        function initVirtualGamepadEvents() {
+            // 1. 动作按钮与辅助按钮
+            const actionButtons = document.querySelectorAll(".vpad-action-btn, .vpad-aux-btn");
+            actionButtons.forEach(btn => {
+                const btnKey = btn.getAttribute("data-btn");
+
+                const handlePress = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    btn.classList.add("active");
+                    const mappedKey = currentPadConfig.mapping[btnKey];
+                    if (mappedKey) dispatchRuffleKeyEvent("keydown", mappedKey);
+                };
+
+                const handleRelease = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    btn.classList.remove("active");
+                    const mappedKey = currentPadConfig.mapping[btnKey];
+                    if (mappedKey) dispatchRuffleKeyEvent("keyup", mappedKey);
+                };
+
+                btn.addEventListener("touchstart", handlePress, { passive: false });
+                btn.addEventListener("touchend", handleRelease, { passive: false });
+                btn.addEventListener("touchcancel", handleRelease, { passive: false });
+                btn.addEventListener("mousedown", handlePress);
+                btn.addEventListener("mouseup", handleRelease);
+                btn.addEventListener("mouseleave", handleRelease);
+            });
+
+            // 2. 十字方向键多点触控与滑动支持 (D-Pad Touch Vector)
+            const dpadArea = document.getElementById("vpad-dpad-area");
+            if (!dpadArea) return;
+
+            let activeDirs = new Set();
+
+            const updateDpadTouch = (touch) => {
+                const rect = dpadArea.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const dx = touch.clientX - centerX;
+                const dy = touch.clientY - centerY;
+                const dist = Math.hypot(dx, dy);
+
+                const newDirs = new Set();
+                const deadZone = rect.width * 0.15;
+
+                if (dist > deadZone) {
+                    const angle = Math.atan2(dy, dx) * (180 / Math.PI); // -180 ~ 180
+                    // 8 向角度切分
+                    if (angle >= -157.5 && angle <= -22.5) newDirs.add("up");
+                    if (angle >= 22.5 && angle <= 157.5) newDirs.add("down");
+                    if (angle >= 112.5 || angle <= -112.5) newDirs.add("left");
+                    if (angle >= -67.5 && angle <= 67.5) newDirs.add("right");
+                }
+
+                // 释放未激活的方向
+                activeDirs.forEach(dir => {
+                    if (!newDirs.has(dir)) {
+                        const keyId = currentPadConfig.mapping[dir];
+                        if (keyId) dispatchRuffleKeyEvent("keyup", keyId);
+                        const btnEl = dpadArea.querySelector(`.dpad-btn[data-dir="${dir}"]`);
+                        if (btnEl) btnEl.classList.remove("active");
+                    }
+                });
+
+                // 按下新激活的方向
+                newDirs.forEach(dir => {
+                    if (!activeDirs.has(dir)) {
+                        const keyId = currentPadConfig.mapping[dir];
+                        if (keyId) dispatchRuffleKeyEvent("keydown", keyId);
+                        const btnEl = dpadArea.querySelector(`.dpad-btn[data-dir="${dir}"]`);
+                        if (btnEl) btnEl.classList.add("active");
+                    }
+                });
+
+                activeDirs = newDirs;
+            };
+
+            const releaseAllDpad = () => {
+                activeDirs.forEach(dir => {
+                    const keyId = currentPadConfig.mapping[dir];
+                    if (keyId) dispatchRuffleKeyEvent("keyup", keyId);
+                    const btnEl = dpadArea.querySelector(`.dpad-btn[data-dir="${dir}"]`);
+                    if (btnEl) btnEl.classList.remove("active");
+                });
+                activeDirs.clear();
+            };
+
+            dpadArea.addEventListener("touchstart", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                updateDpadTouch(e.touches[0]);
+            }, { passive: false });
+
+            dpadArea.addEventListener("touchmove", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                updateDpadTouch(e.touches[0]);
+            }, { passive: false });
+
+            dpadArea.addEventListener("touchend", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                releaseAllDpad();
+            }, { passive: false });
+
+            dpadArea.addEventListener("touchcancel", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                releaseAllDpad();
+            }, { passive: false });
+        }
+
+        /* ========================================================= */
+        /* ⚙️ 虚拟按键自定义设置面板逻辑                              */
+        /* ========================================================= */
+        let currentEditingTargetBtn = null;
+
+        function openKeySettings() {
+            document.getElementById("flash-settings-overlay").style.display = "flex";
+        }
+
+        function closeKeySettings() {
+            document.getElementById("flash-settings-overlay").style.display = "none";
+        }
+
+        window.toggleControlSettings = function () {
+            const overlay = document.getElementById("flash-settings-overlay");
+            if (window.getComputedStyle(overlay).display !== "none") {
+                closeKeySettings();
+            } else {
+                openKeySettings();
+            }
+        };
+
+        window.openControlSettings = window.toggleControlSettings;
+
+        function applyPreset(presetKey) {
+            const p = PRESET_CONFIGS[presetKey];
+            if (!p) return;
+            currentPadConfig.preset = presetKey;
+            currentPadConfig.visible = p.visible;
+            currentPadConfig.mapping = { ...p.mapping };
+            applyPadConfigToUI();
+            savePadConfig();
+        }
+
+        function cycleQuickPreset() {
+            const keys = ["fighting", "arrows", "shooter", "touch"];
+            const nextIdx = (keys.indexOf(currentPadConfig.preset) + 1) % keys.length;
+            applyPreset(keys[nextIdx]);
+        }
+
+        function toggleVirtualPadVisibility() {
+            currentPadConfig.visible = !currentPadConfig.visible;
+            applyPadConfigToUI();
+            savePadConfig();
+        }
+
+        function updatePadOpacity(val) {
+            currentPadConfig.opacity = parseInt(val);
+            document.getElementById("cfg-opacity-val").innerText = val + "%";
+            document.getElementById("flash-virtual-gamepad").style.setProperty("--vpad-opacity", (val / 100).toString());
+        }
+
+        function updatePadScale(scaleVal, tag) {
+            currentPadConfig.scale = scaleVal;
+            currentPadConfig.scaleTag = tag;
+            document.querySelectorAll(".size-btn").forEach(el => el.classList.remove("active"));
+            const btn = document.getElementById("size-btn-" + tag);
+            if (btn) btn.classList.add("active");
+            document.getElementById("flash-virtual-gamepad").style.setProperty("--vpad-scale", scaleVal.toString());
+        }
+
+        function resetDefaultKeyConfig() {
+            applyPreset("fighting");
+            currentPadConfig.opacity = 85;
+            currentPadConfig.scale = 1.0;
+            currentPadConfig.scaleTag = "md";
+            applyPadConfigToUI();
+            savePadConfig();
+        }
+
+        function saveAndCloseKeySettings() {
+            savePadConfig();
+            applyPadConfigToUI();
+            closeKeySettings();
+        }
+
+        // 打开按键选择器
+        function openKeyPicker(btnKey, btnTitle) {
+            currentEditingTargetBtn = btnKey;
+            document.getElementById("key-picker-title").innerText = `选择【${btnTitle}】对应的按键`;
+            const grid = document.getElementById("key-picker-grid");
+            grid.innerHTML = "";
+
+            Object.keys(KEY_DATABASE).forEach(keyId => {
+                const info = KEY_DATABASE[keyId];
+                const btn = document.createElement("div");
+                btn.className = "key-choice-btn";
+                btn.innerText = info.label || keyId;
+                btn.onclick = () => {
+                    currentPadConfig.mapping[currentEditingTargetBtn] = keyId;
+                    currentPadConfig.preset = "custom";
+                    applyPadConfigToUI();
+                    closeKeyPicker();
+                };
+                grid.appendChild(btn);
+            });
+
+            document.getElementById("key-picker-overlay").style.display = "flex";
+        }
+
+        function closeKeyPicker() {
+            document.getElementById("key-picker-overlay").style.display = "none";
+        }
+
+        /* ========================================================= */
+        /* 🎮 Flash 游戏主体载入与生命周期                            */
+        /* ========================================================= */
+        function showTransitionOverlay(titleStr = "Flash 游戏") {
+            const overlay = document.getElementById("transition-overlay");
+            const iconEl = document.getElementById("transition-icon-text");
+            const titleEl = document.getElementById("transition-title-text");
+            const percentageEl = document.getElementById("transition-percentage-text");
+            const statusEl = document.getElementById("transition-status-text");
+
+            if (titleStr) {
+                const cleanName = titleStr.replace(/\.[^/.]+$/, "");
+                const charIcon = cleanName.trim().charAt(0).toUpperCase() || "F";
+                if (iconEl) iconEl.innerText = charIcon;
+                if (titleEl) titleEl.innerText = cleanName;
+            }
+            if (percentageEl) percentageEl.innerText = "0%";
+            if (statusEl) statusEl.innerText = "⚡ 正在初始化 Flash (Ruffle) 虚拟机...";
+
+            if (overlay) {
+                overlay.classList.remove("hidden");
+                overlay.style.display = "flex";
+                overlay.style.opacity = "1";
+            }
+            
+            let progress = 10;
+            if (window.__transitionInterval) clearInterval(window.__transitionInterval);
+            window.__transitionInterval = setInterval(() => {
+                progress += Math.random() * 12 + 5;
+                if (progress > 95) progress = 95;
+                const displayPercent = Math.round(progress);
+                if (percentageEl) percentageEl.innerText = displayPercent + "%";
+
+                try {
+                    window.parent.postMessage({
+                        type: 'GAME_LOADING_PROGRESS',
+                        percent: displayPercent
+                    }, '*');
+                } catch (e) { }
+            }, 150);
+        }
+
+        function hideTransitionOverlay() {
+            if (window.__transitionInterval) clearInterval(window.__transitionInterval);
+            const overlay = document.getElementById("transition-overlay");
+            const percentageEl = document.getElementById("transition-percentage-text");
+            if (percentageEl) percentageEl.innerText = "100%";
+
+            setTimeout(() => {
+                overlay.classList.add("hidden");
+            }, 200);
+        }
+
+        function openRomSelector() {
+            document.getElementById("rom-selector-overlay").style.display = "flex";
+        }
+
+        function closeRomSelector() {
+            document.getElementById("rom-selector-overlay").style.display = "none";
+        }
+
+        function toggleRomSelector() {
+            const overlay = document.getElementById("rom-selector-overlay");
+            const isVisible = window.getComputedStyle(overlay).display !== "none";
+            if (isVisible) {
+                closeRomSelector();
+            } else {
+                openRomSelector();
+            }
+        }
+
+        function getGradientByName(name) {
+            const colors = [
+                'linear-gradient(135deg, #ef4444, #f97316)',
+                'linear-gradient(135deg, #f59e0b, #d97706)',
+                'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                'linear-gradient(135deg, #10b981, #059669)',
+                'linear-gradient(135deg, #ec4899, #be185d)'
+            ];
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return colors[Math.abs(hash) % colors.length];
+        }
+
+        function getFilteredList() {
+            const query = document.getElementById("search-input").value.toLowerCase().trim();
+            return romsList.filter(name => name.toLowerCase().includes(query));
+        }
+
+        function getFilteredRecentList() {
+            const query = document.getElementById("search-input").value.toLowerCase().trim();
+            let recentList = [];
+            try {
+                recentList = JSON.parse(localStorage.getItem("uogame_recent_swf_" + gameId) || "[]");
+            } catch(e) {}
+            return recentList.filter(name => name.toLowerCase().includes(query));
+        }
+
+        function switchTab(tab) {
+            if (activeTab === tab) return;
+            activeTab = tab;
+            document.getElementById("tab-current").classList.toggle("active", tab === "current");
+            document.getElementById("tab-recent").classList.toggle("active", tab === "recent");
+            document.getElementById("search-input").value = "";
+            renderPage();
+        }
+
+        function renderPage() {
+            const container = document.getElementById("rom-list");
+            const isCurrent = activeTab === "current";
+            const fullList = isCurrent ? getFilteredList() : getFilteredRecentList();
+            
+            const titleEl = document.getElementById("selector-title-text");
+            if (titleEl) {
+                titleEl.innerText = `游戏列表 (${fullList.length})`;
+            }
+
+            container.innerHTML = "";
+
+            if (fullList.length === 0) {
+                container.innerHTML = `<div class="empty-tip">${isCurrent ? '未搜索到匹配的游戏文件' : '暂无最近游玩记录'}</div>`;
+                return;
+            }
+
+            fullList.forEach(swfName => {
+                const cleanTitle = swfName.replace(/\.[^/.]+$/, "");
+                const charIcon = cleanTitle.trim().charAt(0).toUpperCase() || "🎮";
+
+                const div = document.createElement("div");
+                div.className = "rom-item";
+                div.onclick = () => {
+                    closeRomSelector();
+                    loadFlashGame(swfName);
+                };
+
+                div.innerHTML = `
+                    <div class="rom-icon" style="background: ${getGradientByName(swfName)}">${charIcon}</div>
+                    <div class="rom-name" title="${swfName}">${cleanTitle}</div>
+                    <div class="rom-play-btn">启动游玩 ▶</div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        document.getElementById("search-input").oninput = function() {
+            renderPage();
+        };
+
+        function saveRecentSwf(swfName) {
+            if (!gameId || !swfName) return;
+            try {
+                const key = "uogame_recent_swf_" + gameId;
+                let list = JSON.parse(localStorage.getItem(key) || "[]");
+                list = list.filter(item => item !== swfName);
+                list.unshift(swfName);
+                if (list.length > 30) list = list.slice(0, 30);
+                localStorage.setItem(key, JSON.stringify(list));
+            } catch(e) {}
+        }
+
+        const loadRuffleScript = () => new Promise((resolve, reject) => {
+            if (window.RufflePlayer) return resolve();
+            const script = document.createElement("script");
+            script.src = "./ruffle/ruffle.js";
+            script.onload = resolve;
+            script.onerror = () => {
+                const fallbackScript = document.createElement("script");
+                fallbackScript.src = "https://unpkg.com/@ruffle-rs/ruffle";
+                fallbackScript.onload = resolve;
+                fallbackScript.onerror = reject;
+                document.head.appendChild(fallbackScript);
+            };
+            document.head.appendChild(script);
+        });
+
+        async function loadFlashGame(swfFile) {
+            if (currentSwfName === swfFile && rufflePlayer) {
+                closeRomSelector();
+                return;
+            }
+
+            currentSwfName = swfFile;
+            saveRecentSwf(swfFile);
+            showTransitionOverlay(swfFile.replace(/\.[^/.]+$/, ""));
+
+            try {
+                await loadRuffleScript();
+
+                const container = document.getElementById("ruffle-container");
+                container.innerHTML = "";
+
+                const ruffle = window.RufflePlayer.newest();
+                rufflePlayer = ruffle.createPlayer();
+                container.appendChild(rufflePlayer);
+
+                const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+                const swfUrl = `/play/${gameId}/${encodeURIComponent(swfFile)}${tokenQuery}`;
+
+                rufflePlayer.load({
+                    url: swfUrl,
+                    letterbox: "on",
+                    autoplay: "on",
+                    unmuteOverlay: "hidden",
+                    allowScriptAccess: true,
+                    backgroundColor: "#000000"
+                }).then(() => {
+                    console.log("🎮 Flash (.swf) 游戏加载成功！");
+                    hideTransitionOverlay();
+                    try {
+                        window.parent.postMessage({ type: 'GAME_STARTED' }, '*');
+                    } catch (e) { }
+                }).catch(err => {
+                    console.error("Flash 游戏载入失败:", err);
+                    hideTransitionOverlay();
+                    try {
+                        window.parent.postMessage({
+                            type: 'GAME_LOAD_FAILED',
+                            message: 'Flash 游戏解析失败: ' + (err.message || "文件损坏")
+                        }, '*');
+                    } catch (e) { }
+                });
+
+            } catch (err) {
+                console.error("加载游戏失败:", err);
+                hideTransitionOverlay();
+                try {
+                    window.parent.postMessage({
+                        type: 'GAME_LOAD_FAILED',
+                        message: err.message || "读取 Flash 游戏资源失败"
+                    }, '*');
+                } catch (e) { }
+            }
+        }
+
+        async function fetchRoms() {
+            const directUrl = getQueryParam("url");
+            if (directUrl) {
+                showTransitionOverlay("本地 Flash 动画");
+                document.getElementById("rom-selector-overlay").style.display = "none";
+                try {
+                    await loadRuffleScript();
+                    const container = document.getElementById("ruffle-container");
+                    container.innerHTML = "";
+                    const ruffle = window.RufflePlayer.newest();
+                    rufflePlayer = ruffle.createPlayer();
+                    container.appendChild(rufflePlayer);
+                    rufflePlayer.load({
+                        url: directUrl,
+                        letterbox: "on",
+                        autoplay: "on",
+                        unmuteOverlay: "hidden",
+                        allowScriptAccess: true,
+                        backgroundColor: "#000000"
+                    }).then(() => {
+                        hideTransitionOverlay();
+                    });
+                } catch(e) {
+                    hideTransitionOverlay();
+                }
+                return;
+            }
+
+            try {
+                const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+                const separator = tokenQuery ? "&" : "?";
+                const romsRes = await fetch(`/api/games/${gameId}/roms${tokenQuery}${separator}_t=${Date.now()}`);
+                if (!romsRes.ok) throw new Error("获取游戏文件失败: " + romsRes.status);
+
+                const data = await romsRes.json();
+                const rawList = Array.isArray(data) ? data : (data?.roms || []);
+                romsList = rawList.filter(r => r.toLowerCase().endsWith('.swf'));
+                if (romsList.length === 0 && rawList.length > 0) {
+                    romsList = rawList;
+                }
+
+                renderPage();
+
+                if (romsList.length === 0) {
+                    throw new Error("未找到有效的 Flash (.swf) 文件");
+                } else if (romsList.length === 1) {
+                    loadFlashGame(romsList[0]);
+                } else {
+                    hideTransitionOverlay();
+                    openRomSelector();
+                    try {
+                        window.parent.postMessage({ type: 'GAME_UI_READY' }, '*');
+                    } catch (e) { }
+                }
+
+            } catch (err) {
+                console.error("读取 ROM 资源失败:", err);
+                hideTransitionOverlay();
+                try {
+                    window.parent.postMessage({
+                        type: 'GAME_LOAD_FAILED',
+                        message: err.message || "读取 Flash 游戏资源失败"
+                    }, '*');
+                } catch (e) { }
+            }
+        }
+
+        // 监听来自父页面的消息 (包含打开/切换游戏列表与按键设置)
+        window.addEventListener("message", function (event) {
+            if (!event.data) return;
+            if (event.data.type === "TOGGLE_ROM_SELECTOR") {
+                toggleRomSelector();
+            } else if (event.data.type === "OPEN_ROM_SELECTOR") {
+                openRomSelector();
+            } else if (event.data.type === "TOGGLE_CONTROL_SETTINGS" || event.data.type === "OPEN_CONTROL_SETTINGS") {
+                window.toggleControlSettings();
+            }
+        });
+
+        // 初始化
+        loadSavedPadConfig();
+        initVirtualGamepadEvents();
+
+        if (initialRom) {
+            showTransitionOverlay(initialRom);
+        }
+
+        if (gameId) {
+            fetchRoms();
+        } else {
+            console.error("缺少游戏挂载 ID");
+        }
+    </script>
+</body>
+
+</html>
