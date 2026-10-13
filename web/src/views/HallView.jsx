@@ -12,7 +12,7 @@ import { useTags } from '../hooks/useTags'
 import useProgressiveList from '../hooks/useProgressiveList'
 import { LS, lsGet } from '../hooks/usePersistence'
 import { parseAliases } from '../lib/aliases'
-import { getAllSources } from '../lib/source'
+import { getAllSources, getCurrentSourceId } from '../lib/source'
 import { searchAllSources } from '../lib/sourceApi'
 
 // 排序器：default 保持后端顺序（加入顺序），其余按对应规则
@@ -52,7 +52,8 @@ export default function HallView({ onOpen, onPlay, onOpenAppearance }) {
   const [remoteItems, setRemoteItems] = useState([])
   const [remoteLoading, setRemoteLoading] = useState(false)
   const remoteSources = useMemo(
-    () => getAllSources().filter((s) => !s.capabilities?.local),
+    // 排除本地源与当前源（当前源已在主列表浏览，避免重复聚合）
+    () => getAllSources().filter((s) => !s.capabilities?.local && s.id !== getCurrentSourceId()),
     []
   )
 

@@ -3,7 +3,7 @@ import { ArrowLeft, Maximize2, Minimize2, RotateCw, RotateCcw, Home, Star } from
 import { playKind } from '../lib/gameType'
 import { getJSON, postJSON, getToken, resolveUrl } from '../api/client'
 import { API } from '../api/endpoints'
-import { getCurrentSource, resolveSourceUrl } from '../lib/source'
+import { getCurrentSource, getSourceById, resolveSourceUrl } from '../lib/source'
 import Spinner from '../components/ui/Spinner'
 import FloatingBall from '../components/FloatingBall'
 import { useToast } from '../contexts/ToastContext'
@@ -150,11 +150,19 @@ export default function PlayView({ game, onExit }) {
       const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : ''
       try {
         if (kind === 'h5') {
-          // H5 游戏本体随源下发：按当前源解析播放地址（本地源=同源相对路径）
-          const playPath = `/play/${game.id}/index.html${
-            token ? `?token=${encodeURIComponent(token)}` : ''
-          }`
-          if (alive) setSrc(resolveUrl(playPath))
+          if (game._static) {
+            // 静态源游戏：直连源地址（GitHub Pages），不经后端
+            // 播放地址 = baseUrl + path + entry
+            const src = getSourceById(game._source?.id) || getCurrentSource()
+            const path = `${game.path || ''}${game.entry || 'index.html'}`
+            if (alive) setSrc(resolveSourceUrl(src, path))
+          } else {
+            // H5 游戏本体随源下发：按当前源解析播放地址（本地源=同源相对路径）
+            const playPath = `/play/${game.id}/index.html${
+              token ? `?token=${encodeURIComponent(token)}` : ''
+            }`
+            if (alive) setSrc(resolveUrl(playPath))
+          }
         } else if (kind === 'flash') {
           // Flash 通过 ruffle.html 加载，gameId 参数 + token 告知目标
           // 播放器页为前端本地资产（同源），其中的游戏文件地址由源决定
@@ -191,8 +199,9 @@ export default function PlayView({ game, onExit }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.id, kind, refreshKey])
 
-  // 记录最近游玩
+  // 记录最近游玩（仅本地源，静态源游戏 id 可能冲突，不污染）
   useEffect(() => {
+    if (game._static) return
     try {
       const key = 'uogame_recent_games_list'
       const cur = JSON.parse(localStorage.getItem(key) || '[]')
@@ -204,10 +213,12 @@ export default function PlayView({ game, onExit }) {
     } catch {
       /* ignore */
     }
-  }, [game.id])
+  }, [game.id, game._static])
 
   // 上报游玩时长（简单心跳：进入 + 离开时结算）
+  // 静态源游戏无本地 game_id，跳过上报（排行榜仅本地源计入）
   useEffect(() => {
+    if (game._static) return
     const started = Date.now()
     const report = () => {
       const secs = Math.max(1, Math.round((Date.now() - started) / 1000))
@@ -218,7 +229,7 @@ export default function PlayView({ game, onExit }) {
       window.removeEventListener('beforeunload', report)
       report()
     }
-  }, [game.id])
+  }, [game.id, game._static])
 
   // 全屏：进入 / 退出切换（对 iframe 外框生效，方向比例保持不变）
   const [isFs, setIsFs] = useState(false)
@@ -389,7 +400,8 @@ export default function PlayView({ game, onExit }) {
         </div>
       </div>
 
-      {/* 评分栏：我的评分（1-5 星，可取消） + 综合评分 */}
+      {/* 评分栏：我的评分（1-5 星，可取消） + 综合评分（静态源游戏无本地 game_id，不显示） */}
+      {!game._static && (
       <div
         className={[
           'flex-wrap items-center justify-center gap-1.5 border-b border-white/10 px-3 py-1.5 text-white',
@@ -412,6 +424,7 @@ export default function PlayView({ game, onExit }) {
           人评分）
         </span>
       </div>
+      )}
 
       {/*
         游玩区域：

@@ -1,10 +1,13 @@
 // 游戏源管理（阅读式源模式）
 //
 // 设计：
-//   - 「本地源」为内置源，指向同源后端，不可删除，始终排在首位；
+//   - 「本地源」为内置源，指向同源后端，不可删除，始终排在首位（type=dynamic）；
 //   - 「远程源」由用户添加（源描述 source.json），持久化到 localStorage；
+//   - 源有两种类型：
+//       dynamic —— 走 API（manifest/search/detail 接口）
+//       static  —— 走静态托管（GitHub Pages），清单一次性拉取 + 前端本地搜索
 //   - 每个源解析出绝对地址（resolveSourceUrl），供 API / 播放统一拼接；
-//   - 源描述遵循协议 uogame-source（见后端 source.go / I_solutions.md 第八节）。
+//   - 源描述遵循协议 uogame-source（见后端 source.go / README）。
 //
 // 本地存储键：
 //   uogame_sources      远程源列表（JSON 数组）
@@ -23,13 +26,18 @@ export const LOCAL_BASE_URL = 'local://'
 export const SOURCE_PROTOCOL = 'uogame-source'
 export const SOURCE_VERSION = 1
 
-// 本地源（内置，不可删除）
+// 源类型
+export const SOURCE_TYPE_DYNAMIC = 'dynamic'
+export const SOURCE_TYPE_STATIC = 'static'
+
+// 本地源（内置，不可删除；动态源）
 export const LOCAL_SOURCE = {
   id: LOCAL_SOURCE_ID,
   name: '本机游戏库',
   baseUrl: LOCAL_BASE_URL,
   protocol: SOURCE_PROTOCOL,
   version: SOURCE_VERSION,
+  type: SOURCE_TYPE_DYNAMIC,
   capabilities: {
     browse: true,
     search: true,
@@ -48,6 +56,11 @@ export const LOCAL_SOURCE = {
     login: '/api/auth/login',
   },
   auth: { type: 'bearer' },
+}
+
+// 判断源是否为静态源
+export function isStaticSource(source) {
+  return !!source && source.type === SOURCE_TYPE_STATIC
 }
 
 // 读取用户添加的远程源
@@ -163,13 +176,21 @@ export function normalizeSourceDescriptor(desc) {
   if (!desc.baseUrl) {
     return { ok: false, error: '缺少 baseUrl' }
   }
+  const type = desc.type === SOURCE_TYPE_STATIC ? SOURCE_TYPE_STATIC : SOURCE_TYPE_DYNAMIC
+  // 静态源必须声明 manifest 文件名
+  if (type === SOURCE_TYPE_STATIC && !desc.manifest) {
+    return { ok: false, error: '静态源缺少 manifest 字段' }
+  }
   const source = {
     id: makeSourceId(desc.name, desc.baseUrl),
     name: desc.name || desc.baseUrl,
     baseUrl: desc.baseUrl,
     protocol: desc.protocol,
     version: Number(desc.version),
+    type,
     icon: desc.icon || '',
+    // 静态源：manifest 相对路径
+    manifest: desc.manifest || '',
     capabilities: desc.capabilities || {},
     endpoints: desc.endpoints || {},
     auth: desc.auth || { type: 'bearer' },
@@ -177,20 +198,59 @@ export function normalizeSourceDescriptor(desc) {
   return { ok: true, source }
 }
 
-// 发现：根据用户填写的域名拉取 /.well-known/uogame-source.json
+// 归一化用户输入为 baseUrl（去尾斜杠、去已知发现路径）
+function normalizeBaseUrl(input) {
+  let base = (input || '').trim()
+  if (!base) return ''
+  if (!/^https?:\/\//i.test(base)) base = `https://${base}`
+  return base
+    .replace(/\/+$/, '')
+    .replace(/\/\.well-known\/uogame-source\.json$/i, '')
+}
+
+// 发现：兼容动态源与静态源
+//   1) 先试动态源：baseUrl/.well-known/uogame-source.json
+//   2) 失败则试静态源：把输入当作 uogame-source.json 的直链
+//   3) 再失败则试 baseUrl/uogame-source.json
 // 返回规范化后的 { ok, source, error }
 export async function discoverSource(input) {
-  let base = (input || '').trim()
-  if (!base) return { ok: false, error: '请输入源地址' }
-  if (!/^https?:\/\//i.test(base)) base = `https://${base}`
-  base = base.replace(/\/+$/, '').replace(/\/\.well-known\/uogame-source\.json$/i, '')
-  const url = `${base}/.well-known/uogame-source.json`
+  const raw = (input || '').trim()
+  if (!raw) return { ok: false, error: '请输入源地址' }
+
+  // 情况：用户直接贴了 xxx/uogame-source.json 的完整链接
+  if (/uogame-source\.json$/i.test(raw)) {
+    const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+    const r = await tryFetchDescriptor(url)
+    if (r.ok) return r
+    return { ok: false, error: r.error }
+  }
+
+  const base = normalizeBaseUrl(raw)
+
+  // 1) 动态源发现
+  const dyn = await tryFetchDescriptor(`${base}/.well-known/uogame-source.json`)
+  if (dyn.ok) return dyn
+
+  // 2) 静态源：baseUrl/uogame-source.json
+  const stat = await tryFetchDescriptor(`${base}/uogame-source.json`)
+  if (stat.ok) {
+    // 静态源若未自带 baseUrl，用推测的 base 补齐
+    return stat
+  }
+
+  return { ok: false, error: `无法发现源：${dyn.error}` }
+}
+
+// 拉取并规范化一份源描述（内部工具）
+async function tryFetchDescriptor(url) {
   try {
     const res = await fetch(url, { credentials: 'omit' })
     if (!res.ok) return { ok: false, error: `源描述请求失败（${res.status}）` }
     const desc = await res.json()
-    // 若源未自带 baseUrl，用发现地址补齐
-    if (!desc.baseUrl) desc.baseUrl = base
+    // 静态源：baseUrl 缺省时，用该描述文件所在目录补齐
+    if (!desc.baseUrl && desc.type === SOURCE_TYPE_STATIC) {
+      desc.baseUrl = url.replace(/\/uogame-source\.json.*$/i, '')
+    }
     return normalizeSourceDescriptor(desc)
   } catch (e) {
     return { ok: false, error: `无法连接源：${e.message || '网络错误'}` }

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "updated_at": 1791614509,
+  "count": 2,
+  "games": [
+    {
+      "id": "hello-world",
+      "name": "你好世界",
+      "game_type": "H5",
+      "path": "games/hello-world/",
+      "entry": "index.html",
+      "tags": ["demo", "test"],
+      "aliases": ["Hello World"]
+    },
+    {
+      "id": "click-counter",
+      "name": "点击计数器",
+      "game_type": "H5",
+      "path": "games/click-counter/",
+      "entry": "index.html",
+      "tags": ["demo", "mini-game"],
+      "aliases": ["Click Counter"]
+    }
+  ]
+}

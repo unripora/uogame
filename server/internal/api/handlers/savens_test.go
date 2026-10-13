@@ -6,7 +6,7 @@ import (
 )
 
 func TestInjectSaveNamespace(t *testing.T) {
-	tag := `<script src="/assets/savens-ns.js" data-ns="h5g76"></script>`
+	tag := `<script src="/assets/savens-ns.js?v=2" data-ns="h5g76"></script>`
 
 	cases := []struct {
 		name     string

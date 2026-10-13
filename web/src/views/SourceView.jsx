@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Plus, Trash2, Check, Globe, HardDrive, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, Check, Globe, HardDrive, RefreshCw, Boxes } from 'lucide-react'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import { useToast } from '../contexts/ToastContext'
@@ -11,13 +11,17 @@ import {
   removeRemoteSource,
   discoverSource,
   normalizeSourceDescriptor,
+  isStaticSource,
   LOCAL_SOURCE_ID,
 } from '../lib/source'
 
 // 源管理面板：展示全部源（本地源 + 远程源），支持切换 / 添加 / 删除
+// 支持两类源（见 lib/source.js）：
+//   - 动态源（dynamic）：走 API，需后端提供 manifest/search/detail
+//   - 静态源（static）：走静态托管（GitHub Pages），清单一次性拉取 + 前端本地搜索
 // 添加方式：
-//   1) 填域名 → 自动发现 /.well-known/uogame-source.json
-//   2) 直接粘贴 source.json
+//   1) 填地址 → 自动发现（先试动态源 / 再试静态源）
+//   2) 直接粘贴源描述 JSON
 export default function SourcePanel() {
   const toast = useToast()
   const [sources, setSources] = useState(getAllSources())
@@ -89,6 +93,7 @@ export default function SourcePanel() {
       <div className="space-y-2">
         {sources.map((s) => {
           const isLocal = s.id === LOCAL_SOURCE_ID
+          const isStatic = isStaticSource(s)
           const active = s.id === currentId
           return (
             <div
@@ -97,11 +102,20 @@ export default function SourcePanel() {
             >
               {isLocal ? (
                 <HardDrive size={20} className="text-theme-accent" />
+              ) : isStatic ? (
+                <Boxes size={20} className="text-theme-accent" />
               ) : (
                 <Globe size={20} className="text-theme-accent" />
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-bold text-theme-text">{s.name}</div>
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm font-bold text-theme-text">{s.name}</span>
+                  {!isLocal && (
+                    <span className="shrink-0 rounded bg-theme-accent/15 px-1.5 py-0.5 text-[10px] font-bold text-theme-accent">
+                      {isStatic ? '静态' : '动态'}
+                    </span>
+                  )}
+                </div>
                 <div className="truncate text-[11px] text-theme-sub">
                   {isLocal ? '本机源（内置）' : s.baseUrl}
                 </div>
@@ -163,7 +177,7 @@ export default function SourcePanel() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="https://game.example.com"
+              placeholder="源地址（动态源域名 / 静态源 Pages 地址）"
             />
             <Button onClick={handleDiscover} disabled={busy}>
               {busy ? <RefreshCw size={16} className="animate-spin" /> : '发现'}
@@ -175,7 +189,7 @@ export default function SourcePanel() {
               value={json}
               onChange={(e) => setJson(e.target.value)}
               rows={6}
-              placeholder='{ "protocol": "uogame-source", "version": 1, ... }'
+              placeholder='{ "protocol": "uogame-source", "version": 1, "type": "static", ... }'
               className="w-full rounded-xl border border-theme-border bg-theme-panel px-3 py-2 font-mono text-xs text-theme-text placeholder:text-theme-sub focus:border-theme-accent focus:outline-none"
             />
             <Button onClick={handlePaste} className="w-full">
@@ -186,8 +200,9 @@ export default function SourcePanel() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-theme-sub">
-        提示：「本机源」始终指向当前后端，不可删除。添加的远程源需符合
-        <code className="mx-1">uogame-source</code>协议，即可被本前端浏览与在线播放。
+        提示：「本机源」始终指向当前后端，不可删除。远程源需符合{' '}
+        <code className="mx-1">uogame-source</code>
+        协议：<b>动态源</b>走 API；<b>静态源</b>（如 GitHub Pages）一次性拉取清单，在前端本地搜索、在线播放。
       </p>
     </div>
   )

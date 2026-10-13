@@ -76,3 +76,16 @@ docs/
 # ============ 测试 / 杂项 ============
 test.txt
 *_test_output.txt
+
+# ============ gamegrab 抓取器：产物与临时脚本 ============
+# 抓取产物（体积巨大，且含第三方版权资源，严禁入库）
+tools/gamegrab/grab_out/
+tools/gamegrab/**/grab_out/
+# 根目录临时探针 / 调试脚本与输出
+_*.py
+_*.ps1
+_*.txt
+_*.json
+# 抓取器本地运行输出
+tools/gamegrab/*.zip
+tools/gamegrab/_*/

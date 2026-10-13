@@ -42,12 +42,14 @@ export async function request(url, options = {}) {
 
 // 把相对地址按当前源解析为绝对地址（已是绝对地址则原样返回）
 // 说明：resolveSourceUrl 导入自 lib/source，避免循环依赖（source 不引 client）
+// 范围收窄：仅游戏播放路径（/play/）按当前源解析；
+// 其余以 / 开头的路径（/api/* 等）一律同源，避免静态源激活时后端请求被拼到 Pages 域名
 export function resolveUrl(url) {
   if (!url || typeof url !== 'string') return url
   if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) {
     return url
   }
-  if (url.startsWith('/')) return resolveSourceUrl(null, url)
+  if (url.startsWith('/play/')) return resolveSourceUrl(null, url)
   return url
 }
 

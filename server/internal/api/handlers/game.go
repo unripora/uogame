@@ -1648,9 +1648,12 @@ func importBatchZip(c *gin.Context, files []*zip.File, onDuplicate string) {
 //
 // strip 为需剥离的前缀（"<id>/files/"）
 func unpackChildEntries(child []*zip.File, explicitDir, strip string) (string, error) {
+	// 子游戏自身的 config.json 路径恰为 strip 的上一级：<prefix>config.json
+	// 例如 strip="1/files/" → selfCfg="1/config.json"
+	selfCfg := strings.TrimSuffix(strip, "files/") + "config.json"
 	var cfgName string
 	for _, f := range child {
-		if strings.HasSuffix(strings.TrimPrefix(f.Name, "./"), "/config.json") {
+		if strings.TrimPrefix(f.Name, "./") == selfCfg {
 			if gc, ok := decodeGameConfig(f); ok {
 				cfgName = gc.Name
 			}
@@ -1671,8 +1674,8 @@ func unpackChildEntries(child []*zip.File, explicitDir, strip string) (string, e
 		return "", err
 	}
 	for _, f := range child {
-		if strings.HasSuffix(strings.TrimPrefix(f.Name, "./"), "/config.json") {
-			continue // 跳过子游戏 config.json
+		if strings.TrimPrefix(f.Name, "./") == selfCfg {
+			continue // 跳过子游戏自身的 config.json（游戏内各 bundle 的 config.json 必须保留）
 		}
 		if err := extractZipEntry(f, dest, strip); err != nil {
 			return "", err
