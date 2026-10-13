@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 全局主题变量
+ * 5 套主题：light（默认浅色）/ dark（暗夜深邃）/ cyberpunk（赛博霓虹）
+ *           arcade（复古街机）/ aurora（暮色极光）
+ * 由 ThemeContext 在 <html data-theme="..."> 上切换
+ */
+:root,
+:root[data-theme='light'] {
+  --lg-bg: #f6f7fb;
+  --lg-panel: #ffffff;
+  --lg-border: #e5e7eb;
+  --lg-text: #111827;
+  --lg-sub: #6b7280;
+  --lg-accent: #2563eb;
+  --lg-accent-2: #38bdf8;
+}
+
+:root[data-theme='dark'] {
+  --lg-bg: #0b0d12;
+  --lg-panel: #14171f;
+  --lg-border: #232833;
+  --lg-text: #e5e7eb;
+  --lg-sub: #9ca3af;
+  --lg-accent: #3b82f6;
+  --lg-accent-2: #60a5fa;
+}
+
+:root[data-theme='cyberpunk'] {
+  --lg-bg: #0a0118;
+  --lg-panel: #170b2b;
+  --lg-border: #3d1e63;
+  --lg-text: #f0e9ff;
+  --lg-sub: #b79ee0;
+  --lg-accent: #ff2fd0;
+  --lg-accent-2: #00e5ff;
+}
+
+:root[data-theme='arcade'] {
+  --lg-bg: #1a1408;
+  --lg-panel: #2a2010;
+  --lg-border: #4a3a18;
+  --lg-text: #ffe9b8;
+  --lg-sub: #c9a76a;
+  --lg-accent: #ffb300;
+  --lg-accent-2: #ff6d00;
+}
+
+:root[data-theme='aurora'] {
+  --lg-bg: #04121a;
+  --lg-panel: #0a2130;
+  --lg-border: #12435a;
+  --lg-text: #e6fbff;
+  --lg-sub: #8fd6e6;
+  --lg-accent: #00d6a4;
+  --lg-accent-2: #a06bff;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--lg-bg);
+  color: var(--lg-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * 输入模态焦点样式（由 useInputModality 写入 <html data-input="pad|key|mouse|touch">）
+ * 手柄/键盘导航时给出高对比焦点环，鼠标/触摸时不干扰视觉。
+ */
+:root[data-input='pad'] :focus,
+:root[data-input='pad'] :focus-visible,
+:root[data-input='key'] :focus-visible {
+  outline: 3px solid var(--lg-accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* 手柄模式：可聚焦元素也补一层隐式焦点环，便于大屏/电视场景定位 */
+:root[data-input='pad'] button:focus-visible,
+:root[data-input='pad'] a:focus-visible,
+:root[data-input='pad'] input:focus-visible {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lg-accent) 35%, transparent);
+}
+

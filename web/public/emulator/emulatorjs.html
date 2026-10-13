@@ -1,0 +1,1931 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <title>UOGame 模拟器</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script>
+        // 兼容补丁：安全拦截与补齐 Battery API，彻底消除第三方插件或废弃 API 产生的 battery.addEventListener 异常
+        (function patchBatteryApi() {
+            try {
+                if (typeof navigator !== 'undefined' && navigator.getBattery) {
+                    const origGetBattery = navigator.getBattery.bind(navigator);
+                    navigator.getBattery = function() {
+                        return origGetBattery().then(battery => {
+                            if (battery && typeof battery.addEventListener !== 'function') {
+                                battery.addEventListener = function() {};
+                                battery.removeEventListener = function() {};
+                            }
+                            return battery;
+                        }).catch(() => ({
+                            charging: true,
+                            chargingTime: 0,
+                            dischargingTime: Infinity,
+                            level: 1,
+                            addEventListener: function() {},
+                            removeEventListener: function() {},
+                            onchargingchange: null,
+                            onlevelchange: null
+                        }));
+                    };
+                }
+            } catch(e) {}
+
+            window.addEventListener('unhandledrejection', function(event) {
+                if (event && event.reason && typeof event.reason.message === 'string') {
+                    if (event.reason.message.includes('battery') || event.reason.message.includes('addEventListener')) {
+                        event.preventDefault();
+                    }
+                }
+            });
+        })();
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b0b0f;
+            font-family: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #ffffff;
+        }
+        .ejs_context_menu {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        #game {
+            width: 100%;
+            height: 100%;
+        }
+        /*
+         * 画面比例修正
+         * EmulatorJS 默认 .ejs_canvas{width:100%;height:100%} 会把游戏画面强行拉伸铺满容器，
+         * 导致竖屏游戏（如部分 FC/街机竖版）被拉伸或裁切。
+         * 这里改用 object-fit:contain，让画布保持自身原始宽高比，多余区域自动留黑边（letterbox），
+         * 电脑与手机均不再变形，也不再强制“匹配宽度”。
+         */
+        .ejs_canvas_parent {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        .ejs_canvas {
+            object-fit: contain !important;
+            object-position: center center !important;
+            width: 100% !important;
+            height: 100% !important;
+            margin: auto !important;
+        }
+        /* ROM 选择器遮罩层 */
+        #rom-selector-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.15), rgba(0, 0, 0, 0.95));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px;
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .selector-panel {
+            width: 100%;
+            max-width: 520px;
+            background: rgba(22, 22, 32, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px;
+            padding: 20px 22px;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            max-height: 85vh;
+            position: relative;
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .selector-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .selector-title-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+        }
+        .selector-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            color: #ffffff;
+            line-height: 1.1;
+        }
+        .console-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1.2;
+            background: rgba(99, 102, 241, 0.2);
+            color: #c7d2fe;
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            transition: all 0.3s ease;
+        }
+        .close-selector-btn {
+            position: relative;
+            top: auto;
+            right: auto;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .close-selector-btn:hover {
+            background: rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+            transform: scale(1.05);
+        }
+        .close-selector-btn:active {
+            transform: scale(0.95);
+        }
+        /* 选项卡 (Tabs) 胶囊滑动样式 */
+        .tabs-container {
+            display: flex;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 3px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+        .tab-button {
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            border-radius: 8px;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.45);
+            transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+            white-space: nowrap;
+        }
+        .tab-button:hover {
+            color: rgba(255, 255, 255, 0.85);
+        }
+        .tab-button.active {
+            background: rgba(255, 255, 255, 0.14);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+        .search-box {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        .search-input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 12px 16px 12px 40px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            transition: all 0.3s;
+        }
+        .search-input:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+        }
+        .search-icon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            opacity: 0.4;
+            pointer-events: none;
+            color: #ffffff;
+        }
+        .rom-list {
+            flex: 1;
+            overflow-y: auto;
+            margin-right: -8px;
+            padding-right: 8px;
+        }
+        .rom-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        .rom-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        .rom-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 18px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .rom-item:hover {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: rgba(99, 102, 241, 0.25);
+            transform: translateY(-2px);
+        }
+        .rom-item:active {
+            transform: scale(0.98);
+        }
+        .rom-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            flex-shrink: 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+        }
+        .rom-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.85);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex-grow: 1;
+        }
+        .rom-play-btn {
+            font-size: 11px;
+            font-weight: 800;
+            color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+            padding: 6px 12px;
+            border-radius: 10px;
+            transition: all 0.2s;
+        }
+        .rom-item:hover .rom-play-btn {
+            background: #6366f1;
+            color: #ffffff;
+        }
+        .empty-tip {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* 极奢平滑切换加载遮罩 */
+        #transition-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1400;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(5, 8, 18, 0.86);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transition: opacity 0.28s ease, visibility 0.28s ease;
+        }
+
+        #transition-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        .transition-bg-glow {
+            position: absolute;
+            width: 380px;
+            height: 380px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.28) 0%, rgba(168, 85, 247, 0.15) 50%, transparent 75%);
+            filter: blur(40px);
+            border-radius: 50%;
+            animation: pulseGlow 4s ease-in-out infinite alternate;
+        }
+        @keyframes pulseGlow {
+            0% { transform: scale(0.85); opacity: 0.6; }
+            100% { transform: scale(1.15); opacity: 1; }
+        }
+        .transition-card {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 36px 40px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 28px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            max-width: 340px;
+            width: 90%;
+            text-align: center;
+        }
+        .transition-icon-wrap {
+            position: relative;
+            width: 68px;
+            height: 68px;
+            margin-bottom: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .transition-ring {
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            border: 2.5px solid transparent;
+            border-top-color: #6366f1;
+            border-right-color: #a855f7;
+            animation: spinRing 1.1s linear infinite;
+        }
+        @keyframes spinRing {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .transition-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            font-weight: 900;
+            color: #fff;
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+        }
+        .transition-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 6px;
+            letter-spacing: -0.3px;
+            max-width: 260px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .transition-badge {
+            font-size: 10px;
+            font-weight: 900;
+            color: #a5b4fc;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.25);
+            padding: 3px 10px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 22px;
+        }
+        .transition-percentage {
+            font-size: 36px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #a5b4fc, #6366f1, #ec4899);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 6px;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+        .transition-status {
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            max-width: 280px;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* 移动端虚拟按键与手柄高层级显隐保障 (仅在判定为移动端设备时强制激活) */
+        .is-mobile .ejs_virtualGamepad_parent,
+        .is-mobile .ejs_virtualGamepad_button,
+        .is-mobile .ejs_dpad_main,
+        .is-mobile .ejs_dpad_bar,
+        .is-mobile .nipple {
+            touch-action: none !important;
+            -webkit-touch-callout: none !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+        }
+
+        .is-mobile .ejs_virtualGamepad_parent {
+            display: block !important;
+            z-index: 999 !important;
+            pointer-events: auto !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        /* PC 端强行绝对隐藏虚拟触控按键 */
+        .is-pc .ejs_virtualGamepad_parent {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            visibility: hidden !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game"></div>
+    </div>
+
+    <!-- 极奢平滑切换加载遮罩层 (无进度条，极简高清文字与百分比) -->
+    <div id="transition-overlay">
+        <div class="transition-bg-glow"></div>
+        <div class="transition-card">
+            <div class="transition-icon-wrap">
+                <div class="transition-ring"></div>
+                <div class="transition-icon" id="transition-icon-text">G</div>
+            </div>
+            <div class="transition-title" id="transition-title-text">正在初始化游戏...</div>
+            <div class="transition-badge" id="transition-badge-text">EMULATOR CORE</div>
+            
+            <div class="transition-percentage" id="transition-percentage-text">0%</div>
+            
+            <div class="transition-status" id="transition-status-text">⚡ 正在准备 WASM 虚拟机环境...</div>
+        </div>
+    </div>
+
+    <!-- ROM 选择遮罩层 -->
+    <div id="rom-selector-overlay">
+        <div class="selector-panel">
+            <div class="selector-header-bar">
+                <div class="selector-title-group">
+                    <div class="selector-title" id="selector-title-text">游戏列表 (0)</div>
+                    <span class="console-badge" id="console-label">街机游戏</span>
+                </div>
+                <div class="tabs-container">
+                    <div class="tab-button active" id="tab-current" onclick="switchTab('current')">当前目录</div>
+                    <div class="tab-button" id="tab-recent" onclick="switchTab('recent')">最近游玩</div>
+                </div>
+                <button class="close-selector-btn" onclick="closeRomSelector()" title="关闭列表">✕</button>
+            </div>
+
+            <div class="search-box">
+                <input type="text" id="search-input" class="search-input" placeholder="输入关键字搜索游戏...">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            
+            <div class="rom-list" id="rom-list">
+                <div class="empty-tip">正在拉取目录下的游戏文件...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getQueryParam(name) {
+            const reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
+            const r = window.location.search.substr(1).match(reg);
+            if (r != null) return decodeURIComponent(r[2]);
+            return null;
+        }
+
+        // 兼容前端两种传参：?id=（历史）与 ?gameId=（当前 PlayView）
+        const gameId = getQueryParam("id") || getQueryParam("gameId");
+        const rawGameType = (getQueryParam("type") || "GBA").toUpperCase();
+        const gameTypeAliasMap = {
+            'SFC': 'SNES'
+        };
+        const gameType = gameTypeAliasMap[rawGameType] || rawGameType;
+        const token = getQueryParam("token") || localStorage.getItem("uogame_token");
+
+        let consoleNames = {
+            'FC': 'NES / FC 游戏',
+            'GBA': 'GBA 游戏',
+            'SNES': 'SNES / SFC 游戏',
+            'GB': 'Game Boy 游戏',
+            'GBC': 'Game Boy Color 游戏',
+            'MD': 'Sega MD 游戏',
+            'N64': 'N64 游戏',
+            'NDS': 'NDS 游戏',
+            'ARCADE': '街机游戏',
+            'DOS': 'DOS 游戏',
+            'WS': '万代 WS 游戏',
+            'NGP': 'SNK NGP 游戏',
+            'GG': '世嘉 GG 游戏',
+            'SMS': '世嘉 MS 游戏',
+            'A2600': '雅达利 2600 游戏',
+            'A7800': '雅达利 7800 游戏',
+            'LYNX': '雅达利 Lynx 游戏',
+            'PSX': 'PS1 游戏',
+            'SATURN': '世嘉土星 游戏',
+            'SEGACD': '世嘉 CD 游戏',
+            'SEGA32X': '世嘉 32X 游戏',
+            'MAME': 'MAME 街机游戏',
+            'PCE': 'PC Engine 游戏',
+            'VB': 'Virtual Boy 游戏',
+            '3DO': '3DO 游戏机游戏',
+            'A5200': '雅达利 5200 游戏',
+            'COLECO': 'ColecoVision 游戏',
+            'PCFX': 'PC-FX 游戏',
+            'JAGUAR': '雅达利 Jaguar 游戏'
+        };
+
+        // 统一映射到离线 WASM 核心名 (Libretro 命名)
+        let coreMapping = {
+            'FC': 'fceumm',
+            'GBA': 'mgba',
+            'SNES': 'snes9x',
+            'GB': 'gambatte',
+            'GBC': 'gambatte',
+            'MD': 'genesis_plus_gx',
+            'N64': 'mupen64plus_next',
+            'NDS': 'melonds',
+            'ARCADE': 'fbneo',
+            'DOS': 'dosbox_pure',
+            'WS': 'mednafen_wswan',
+            'NGP': 'mednafen_ngp',
+            'GG': 'genesis_plus_gx',
+            'SMS': 'genesis_plus_gx',
+            'A2600': 'stella2014',
+            'A7800': 'prosystem',
+            'LYNX': 'handy',
+            'PSX': 'pcsx_rearmed',
+            'SATURN': 'yabause',
+            'SEGACD': 'genesis_plus_gx',
+            'SEGA32X': 'picodrive',
+            'MAME': 'mame2003_plus',
+            'PCE': 'mednafen_pce',
+            'VB': 'beetle_vb',
+            '3DO': 'opera',
+            'A5200': 'a5200',
+            'COLECO': 'gearcoleco',
+            'PCFX': 'mednafen_pcfx',
+            'JAGUAR': 'virtualjaguar'
+        };
+
+        // 异步加载动态配置文件 (支持免修改代码扩充平台与内核)
+        async function loadEmulatorConfig() {
+            try {
+                const res = await fetch('/emulator/config.json');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.consoleNames) consoleNames = { ...consoleNames, ...data.consoleNames };
+                    if (data.coreMapping) coreMapping = { ...coreMapping, ...data.coreMapping };
+                    console.log("⚙️ 成功从 /emulator/config.json 动态加载配置");
+                }
+            } catch(e) {
+                console.warn("⚠️ 动态加载 config.json 失败，降级使用默认内核配置:", e);
+            }
+        }
+
+        // 拦截 WASM 核心、游戏 ROM 与 BIOS 数据包下载，按多线程/多文件汇总计算总进度与详细说明
+        (function setupNetworkDownloadInterceptor() {
+            const originalOpen = XMLHttpRequest.prototype.open;
+            const originalSend = XMLHttpRequest.prototype.send;
+            const activeDownloads = new Map();
+
+            function calcOverallProgress(url, loaded, total) {
+                const itemPercent = (total && total > 0) ? (loaded / total) : 0;
+                const cleanUrl = url.split('?')[0];
+                const rawFileName = cleanUrl.split('/').pop();
+                let fileName = rawFileName;
+                try { fileName = decodeURIComponent(rawFileName); } catch(err) {}
+
+                const isCore = url.includes('.wasm') || url.includes('.data') || url.includes('/cores/');
+                const isBios = (typeof isSystemBios === 'function' && isSystemBios(fileName)) || (Array.isArray(window.EJS_biosUrls) && window.EJS_biosUrls.some(u => u.includes(encodeURIComponent(fileName)) || u.includes(fileName)));
+                const isParentRom = (Array.isArray(window.EJS_gameParentUrls) && window.EJS_gameParentUrls.some(u => u.includes(encodeURIComponent(fileName)) || u.includes(fileName))) ||
+                                    (window.__currentActiveRomName && fileName !== window.__currentActiveRomName && !isBios && !isCore && (url.includes('/play/') || isRomExt));
+                const isMainRom = !isParentRom && !isBios && !isCore && (url.includes('/play/') || isRomExt);
+
+                if (isMainRom) {
+                    // 主 ROM 文件的下载占最终主导进度：由 50% 真实线性推进至 95%
+                    return Math.min(95, Math.max(50, Math.round(50 + itemPercent * 45)));
+                } else if (isParentRom) {
+                    // 街机关联/父级 ROM 下载推进 30% -> 55%
+                    return Math.min(55, Math.max(30, Math.round(30 + itemPercent * 25)));
+                } else if (isBios) {
+                    // BIOS 固件下载推进 20% -> 40%
+                    return Math.min(40, Math.max(20, Math.round(20 + itemPercent * 20)));
+                } else if (isCore) {
+                    // WASM 核心下载推进 10% -> 30%
+                    return Math.min(30, Math.max(10, Math.round(10 + itemPercent * 20)));
+                } else {
+                    return Math.min(90, Math.max(10, Math.round(10 + itemPercent * 30)));
+                }
+            }
+
+            XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                this.__downloadUrl = url ? String(url) : '';
+                return originalOpen.apply(this, [method, url, ...rest]);
+            };
+
+            XMLHttpRequest.prototype.send = function(body) {
+                const url = this.__downloadUrl || '';
+                const isCore = url.includes('.wasm') || url.includes('.data') || url.includes('/cores/');
+                const isPlay = url.includes('/play/');
+                const isRomExt = /\.(zip|nds|gba|sfc|nes|md|n64|z64|cue|iso|chd|bin|pbp)$/i.test(url.split('?')[0]);
+
+                if (isCore || isPlay || isRomExt) {
+                    const cleanUrl = url.split('?')[0];
+                    const rawFileName = cleanUrl.split('/').pop();
+                    let fileName = rawFileName;
+                    try { fileName = decodeURIComponent(rawFileName); } catch(err) {}
+
+                    const isBios = (typeof isSystemBios === 'function' && isSystemBios(fileName)) || (Array.isArray(window.EJS_biosUrls) && window.EJS_biosUrls.some(u => u.includes(encodeURIComponent(fileName)) || u.includes(fileName)));
+                    const isParentRom = (Array.isArray(window.EJS_gameParentUrls) && window.EJS_gameParentUrls.some(u => u.includes(encodeURIComponent(fileName)) || u.includes(fileName))) ||
+                                        (window.__currentActiveRomName && fileName !== window.__currentActiveRomName && !isBios && !isCore && (isPlay || isRomExt));
+
+                    const handleProgress = (e) => {
+                        if (e.lengthComputable && e.total > 0) {
+                            activeDownloads.set(url, { loaded: e.loaded, total: e.total });
+                            const overallPercent = calcOverallProgress(url, e.loaded, e.total);
+                            const itemPercent = Math.min(100, Math.max(0, Math.round((e.loaded / e.total) * 100)));
+
+                            let statusText = `⚡ 正在下载资源 [${fileName}] - 进度 ${itemPercent}%`;
+                            if (isCore) {
+                                statusText = `⚡ 正在下载核心 [${fileName}] - 进度 ${itemPercent}%`;
+                            } else if (isBios) {
+                                statusText = `🔌 正在下载 BIOS [${fileName}] - 进度 ${itemPercent}%`;
+                            } else if (isParentRom) {
+                                statusText = `🔗 正在下载关联 ROM [${fileName}] - 进度 ${itemPercent}%`;
+                            } else if (isPlay || isRomExt) {
+                                statusText = `🎮 正在下载 ROM [${fileName}] - 进度 ${itemPercent}%`;
+                            }
+
+                            if (window.__uogameSetDownloadStatus && overallPercent !== null) {
+                                window.__uogameSetDownloadStatus(statusText, overallPercent);
+                            }
+                        }
+                    };
+
+                    this.addEventListener('progress', handleProgress);
+                    this.addEventListener('load', (e) => {
+                        if (e.lengthComputable && e.total > 0) {
+                            activeDownloads.set(url, { loaded: e.total, total: e.total });
+                            const overallPercent = calcOverallProgress(url, e.total, e.total);
+                            let doneText = `⚡ 资源 [${fileName}] 下载完成`;
+                            if (isCore) {
+                                doneText = `⚡ 核心 [${fileName}] 下载完成`;
+                            } else if (isBios) {
+                                doneText = `🔌 BIOS [${fileName}] 下载完成`;
+                            } else if (isParentRom) {
+                                doneText = `🔗 关联 ROM [${fileName}] 下载完成`;
+                            } else if (isPlay || isRomExt) {
+                                doneText = `🎮 ROM [${fileName}] 下载完成`;
+                            }
+                            if (window.__uogameSetDownloadStatus && overallPercent !== null) {
+                                window.__uogameSetDownloadStatus(doneText, overallPercent);
+                            }
+                        }
+                    });
+                }
+                return originalSend.apply(this, [body]);
+            };
+        })();
+
+        let romsList = [];
+        let hiddenBiosList = [];
+        let romDependencyMap = {};
+        let activeTab = "current";
+
+        // 二进制/Base64 对接云存档转换工具
+        function uint8ArrayToBase64(bytes) {
+            if (!bytes || bytes.length === 0) return "";
+            let binary = "";
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        function base64ToUint8Array(base64) {
+            if (!base64 || typeof base64 !== "string") return null;
+            try {
+                const binary_string = window.atob(base64);
+                const len = binary_string.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binary_string.charCodeAt(i);
+                }
+                return bytes;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // 平滑切换过渡动画控制 (无进度条，大字百分比 + 详尽状态说明)
+        function showTransitionOverlay(romTitle = "", typeName = "") {
+            const overlay = document.getElementById("transition-overlay");
+            if (!overlay) return;
+            overlay.classList.remove("hidden");
+            
+            const cleanTitle = (romTitle || "游戏").replace(/\.[^/.]+$/, "");
+            const titleEl = document.getElementById("transition-title-text");
+            const iconEl = document.getElementById("transition-icon-text");
+            const badgeEl = document.getElementById("transition-badge-text");
+            const percentageEl = document.getElementById("transition-percentage-text");
+            const statusEl = document.getElementById("transition-status-text");
+            
+            if (titleEl) titleEl.innerText = cleanTitle;
+            if (iconEl) iconEl.innerText = cleanTitle.trim().charAt(0).toUpperCase() || "G";
+            if (badgeEl) badgeEl.innerText = typeName || consoleNames[gameType] || gameType || "EMULATOR CORE";
+            if (percentageEl) percentageEl.innerText = "5%";
+            if (statusEl) statusEl.innerText = "⚡ 正在准备 WASM 虚拟机环境...";
+            
+            let progress = 5;
+            window.__transitionRealProgress = { percent: 5, lastUpdated: Date.now() };
+
+            window.__uogameSetDownloadStatus = (text, percent = null) => {
+                if (statusEl && text) {
+                    statusEl.innerText = text;
+                }
+                if (Number.isFinite(percent)) {
+                    const clampedPercent = Math.max(5, Math.min(99, percent));
+                    progress = Math.max(progress, clampedPercent);
+                    window.__transitionRealProgress = {
+                        percent: progress,
+                        lastUpdated: Date.now()
+                    };
+                    if (percentageEl) percentageEl.innerText = Math.round(progress) + "%";
+                }
+                try {
+                    window.parent.postMessage({
+                        type: 'GAME_LOADING_PROGRESS',
+                        text: text,
+                        percent: Math.round(progress)
+                    }, '*');
+                } catch(e) {}
+            };
+
+            if (window.__transitionInterval) clearInterval(window.__transitionInterval);
+
+            window.__transitionInterval = setInterval(() => {
+                const realProgress = window.__transitionRealProgress;
+                const hasFreshRealProgress = !!realProgress && (Date.now() - realProgress.lastUpdated) < 1500;
+                if (hasFreshRealProgress) {
+                    progress = Math.max(progress, realProgress.percent);
+                } else {
+                    // 无实时网络事件时的缓动推进
+                    if (progress < 40) {
+                        progress += Math.random() * 1.2 + 0.4;
+                        if (progress > 40) progress = 40;
+                    } else if (progress >= 95 && progress < 99) {
+                        progress += 0.3;
+                    }
+                }
+                const displayPercent = Math.round(progress);
+                if (percentageEl) percentageEl.innerText = displayPercent + "%";
+                
+                if (statusEl && !hasFreshRealProgress) {
+                    if (progress > 75) {
+                        statusEl.innerText = "💾 正在预载与注入游戏本地存档...";
+                    } else if (progress > 40) {
+                        statusEl.innerText = "📦 正在挂载 C++ 虚拟文件系统 (VFS)...";
+                    }
+                }
+
+                try {
+                    window.parent.postMessage({
+                        type: 'GAME_LOADING_PROGRESS',
+                        percent: displayPercent
+                    }, '*');
+                } catch(e) {}
+            }, 300);
+        }
+
+        function hideTransitionOverlay() {
+            const overlay = document.getElementById("transition-overlay");
+            if (!overlay) return;
+            
+            const fill = document.getElementById("transition-progress-fill");
+            const status = document.getElementById("transition-status-text");
+            if (fill) fill.style.width = "100%";
+            if (status) status.innerText = "✅ 运行就绪，即将进入场景！";
+
+            if (window.__transitionInterval) {
+                clearInterval(window.__transitionInterval);
+                window.__transitionInterval = null;
+            }
+            window.__uogameSetDownloadStatus = null;
+            window.__transitionRealProgress = null;
+
+            setTimeout(() => {
+                overlay.classList.add("hidden");
+            }, 350);
+        }
+
+        // 图标渐变辅助颜色
+        function getCharBg(name) {
+            const colors = [
+                'linear-gradient(135deg, #4f46e5, #3b82f6)',
+                'linear-gradient(135deg, #10b981, #059669)',
+                'linear-gradient(135deg, #f59e0b, #d97706)',
+                'linear-gradient(135deg, #ef4444, #b91c1c)',
+                'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+                'linear-gradient(135deg, #ec4899, #be185d)'
+            ];
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return colors[Math.abs(hash) % colors.length];
+        }
+
+        function getFilteredList() {
+            const query = document.getElementById("search-input").value.toLowerCase().trim();
+            return romsList.filter(name => name.toLowerCase().includes(query));
+        }
+
+        function getFilteredRecentList() {
+            const query = document.getElementById("search-input").value.toLowerCase().trim();
+            let recentList = [];
+            try {
+                recentList = JSON.parse(localStorage.getItem("uogame_recent_roms_" + gameId) || "[]");
+            } catch(e) {}
+            return recentList.filter(name => name.toLowerCase().includes(query));
+        }
+
+        // 选项卡切换
+        function switchTab(tab) {
+            if (activeTab === tab) return;
+            activeTab = tab;
+            document.getElementById("tab-current").classList.toggle("active", tab === "current");
+            document.getElementById("tab-recent").classList.toggle("active", tab === "recent");
+            
+            const searchInput = document.getElementById("search-input");
+            if (tab === "current") {
+                searchInput.placeholder = "输入游戏名称搜索...";
+            } else {
+                searchInput.placeholder = "搜索最近游玩的游戏...";
+            }
+            searchInput.value = "";
+            
+            visibleCount = 20;
+            renderPage();
+            document.getElementById("rom-list").scrollTop = 0;
+        }
+
+        function refreshList() {
+            visibleCount = 20;
+            renderPage();
+        }
+
+        // 分页渲染游戏列表
+        function renderPage() {
+            const container = document.getElementById("rom-list");
+            const isCurrent = activeTab === "current";
+            const fullList = isCurrent ? getFilteredList() : getFilteredRecentList();
+            
+            const titleEl = document.getElementById("selector-title-text");
+            if (titleEl) {
+                titleEl.innerText = `游戏列表 (${fullList.length})`;
+            }
+
+            container.innerHTML = "";
+            
+            if (fullList.length === 0) {
+                container.innerHTML = isCurrent 
+                    ? '<div class="empty-tip">该目录下未检测到任何兼容的游戏 ROM (.zip 等)</div>'
+                    : '<div class="empty-tip">暂无最近游玩记录</div>';
+                return;
+            }
+
+            const pageList = fullList.slice(0, visibleCount);
+            
+            pageList.forEach(romName => {
+                const cleanName = romName.replace(/\.[^/.]+$/, "");
+                const item = document.createElement("div");
+                item.className = "rom-item";
+                item.onclick = () => loadGameRom(romName);
+
+                const char = cleanName.trim().charAt(0).toUpperCase();
+                const bg = getCharBg(cleanName);
+
+                item.innerHTML = `
+                    <div class="rom-icon" style="background: ${bg}">${char}</div>
+                    <div class="rom-name" title="${cleanName}">${cleanName}</div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // 监听滚动实现下翻加载更多
+        const listEl = document.getElementById("rom-list");
+        listEl.onscroll = function() {
+            const isCurrent = activeTab === "current";
+            const fullList = isCurrent ? getFilteredList() : getFilteredRecentList();
+            if (listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 40) {
+                if (visibleCount < fullList.length) {
+                    visibleCount += 20;
+                    renderPage();
+                }
+            }
+        };
+
+        const consoleBadgeColorMap = {
+            'FC': { bg: 'rgba(239, 68, 68, 0.2)', text: '#fca5a5', border: 'rgba(239, 68, 68, 0.3)' },
+            'GBA': { bg: 'rgba(168, 85, 247, 0.2)', text: '#d8b4fe', border: 'rgba(168, 85, 247, 0.3)' },
+            'SNES': { bg: 'rgba(139, 92, 246, 0.2)', text: '#c4b5fd', border: 'rgba(139, 92, 246, 0.3)' },
+            'GB': { bg: 'rgba(34, 197, 94, 0.2)', text: '#86efac', border: 'rgba(34, 197, 94, 0.3)' },
+            'GBC': { bg: 'rgba(20, 184, 166, 0.2)', text: '#99f6e4', border: 'rgba(20, 184, 166, 0.3)' },
+            'MD': { bg: 'rgba(59, 130, 246, 0.2)', text: '#93c5fd', border: 'rgba(59, 130, 246, 0.3)' },
+            'N64': { bg: 'rgba(245, 158, 11, 0.2)', text: '#fde047', border: 'rgba(245, 158, 11, 0.3)' },
+            'NDS': { bg: 'rgba(236, 72, 153, 0.2)', text: '#fbcfe8', border: 'rgba(236, 72, 153, 0.3)' },
+            'ARCADE': { bg: 'rgba(99, 102, 241, 0.2)', text: '#c7d2fe', border: 'rgba(99, 102, 241, 0.3)' },
+            'MAME': { bg: 'rgba(99, 102, 241, 0.2)', text: '#c7d2fe', border: 'rgba(99, 102, 241, 0.3)' },
+            'PSX': { bg: 'rgba(14, 165, 233, 0.2)', text: '#7dd3fc', border: 'rgba(14, 165, 233, 0.3)' },
+            'FLASH': { bg: 'rgba(249, 115, 22, 0.2)', text: '#fdba74', border: 'rgba(249, 115, 22, 0.3)' }
+        };
+
+        function updateConsoleBadge(type) {
+            const badge = document.getElementById("console-label");
+            if (!badge) return;
+            badge.innerText = consoleNames[type] || `${type} 游戏`;
+            const colors = consoleBadgeColorMap[type] || { bg: 'rgba(99, 102, 241, 0.2)', text: '#c7d2fe', border: 'rgba(99, 102, 241, 0.3)' };
+            badge.style.backgroundColor = colors.bg;
+            badge.style.color = colors.text;
+            badge.style.borderColor = colors.border;
+        }
+
+        // 拉取挂载 ROM 列表
+        async function fetchRoms() {
+            await loadEmulatorConfig();
+            updateConsoleBadge(gameType);
+
+            const directUrl = getQueryParam("url");
+            if (directUrl) {
+                showTransitionOverlay("本地离线 ROM", consoleNames[gameType] || gameType);
+                document.getElementById("rom-selector-overlay").style.display = "none";
+                document.getElementById("game").innerHTML = "";
+
+                window.EJS_player = '#game';
+                window.EJS_gameName = 'local_test_rom';
+                window.EJS_gameUrl = directUrl;
+                window.EJS_pathtodata = '/emulator/core/emulatorjs/data/';
+                window.EJS_core = coreMapping[gameType] || 'mgba';
+                const controlSchemeMapping = {
+                    'MD': 'segaMD',
+                    'SMS': 'segaMS',
+                    'GG': 'segaGG',
+                    'SEGACD': 'segaCD',
+                    'SEGA32X': 'sega32x',
+                    'SNES': 'snes',
+                    'ARCADE': 'arcade',
+                    'MAME': 'mame'
+                };
+                window.EJS_controlScheme = controlSchemeMapping[gameType];
+                window.EJS_settingsKey = `uogame-test-${String(gameType || '').toLowerCase()}`;
+                window.EJS_startOnLoaded = true;
+                window.EJS_DEBUG_XX = true;
+                window.EJS_language = 'zh-CN';
+                window.EJS_askBeforeExit = false;
+
+                const script = document.createElement('script');
+                script.src = '/emulator/core/emulatorjs/data/loader.js';
+                script.onload = () => {
+                    setTimeout(() => hideTransitionOverlay(), 1200);
+                };
+                document.body.appendChild(script);
+                return;
+            }
+
+            const initialRom = getQueryParam("rom");
+            if (initialRom) {
+                window.__currentActiveRomName = initialRom;
+                showTransitionOverlay(initialRom, consoleNames[gameType] || gameType);
+            }
+
+            let url = `/api/games/${gameId}/roms`;
+            if (token) {
+                url += `?token=${encodeURIComponent(token)}`;
+            }
+
+            fetch(url)
+                .then(res => {
+                    if (!res.ok) throw new Error("获取ROM列表失败: " + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        romsList = data || [];
+                        hiddenBiosList = [];
+                        romDependencyMap = {};
+                    } else {
+                        romsList = data?.roms || [];
+                        hiddenBiosList = data?.hidden_bios || [];
+                        romDependencyMap = data?.dependencies || {};
+                    }
+                    refreshList();
+
+                    const urlRom = getQueryParam("rom");
+                    let targetRom = null;
+                    if (urlRom) {
+                        targetRom = romsList.find(r => r === urlRom || r.toLowerCase() === urlRom.toLowerCase() || decodeURIComponent(r) === decodeURIComponent(urlRom));
+                    }
+                    if (targetRom && !window.EJS_emulator) {
+                        loadGameRom(targetRom);
+                    } else if (romsList.length === 1 && !window.EJS_emulator) {
+                        loadGameRom(romsList[0]);
+                    } else if (romsList.length > 1) {
+                        hideTransitionOverlay();
+                        if (typeof window.openRomSelector === 'function') {
+                            window.openRomSelector();
+                        }
+                        try {
+                            window.parent.postMessage({ type: 'GAME_UI_READY' }, '*');
+                        } catch(e) {}
+                    } else {
+                        // 挂载目录中没有找到匹配该类型的 ROM
+                        hideTransitionOverlay();
+                        if (typeof window.openRomSelector === 'function') {
+                            window.openRomSelector();
+                        }
+                        document.getElementById("rom-list").innerHTML = '<div class="empty-tip" style="color:#f59e0b;padding:32px 16px;line-height:1.6;">⚠️ 未在当前挂载目录中检测到可游玩的 ROM 文件<br/><span style="font-size:11px;opacity:0.8;display:block;margin-top:6px;">请确认 Docker 目录映射权限，或在管理后台上传该游戏的 ROM 文件</span></div>';
+                        try {
+                            window.parent.postMessage({ type: 'GAME_UI_READY' }, '*');
+                        } catch(e) {}
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    hideTransitionOverlay();
+                    if (typeof window.openRomSelector === 'function') {
+                        window.openRomSelector();
+                    }
+                    try {
+                        window.parent.postMessage({
+                            type: 'GAME_LOAD_FAILED',
+                            message: '获取游戏列表失败，请确认挂载目录配置正确'
+                        }, '*');
+                    } catch(e) {}
+                    document.getElementById("rom-list").innerHTML = '<div class="empty-tip" style="color:#ef4444;padding:32px 16px;line-height:1.6;">获取游戏列表失败，请确认挂载目录配置与读取权限正常</div>';
+                });
+        }
+
+        // 模糊搜索绑定
+        document.getElementById("search-input").oninput = function(e) {
+            refreshList();
+        };
+
+        // 最近游玩保存逻辑
+        function saveRecentRom(romName) {
+            if (!gameId || !romName) return;
+            try {
+                const key = "uogame_recent_roms_" + gameId;
+                let list = JSON.parse(localStorage.getItem(key) || "[]");
+                const index = list.indexOf(romName);
+                if (index > -1) {
+                    list.splice(index, 1);
+                }
+                list.unshift(romName);
+                list = list.slice(0, 10); // 最多保留10个
+                localStorage.setItem(key, JSON.stringify(list));
+            } catch(e) {}
+        }
+
+        function isAllZeros(arr) {
+            if (!arr || arr.length === 0) return true;
+            const len = arr.length;
+            for (let i = 0; i < len; i++) {
+                if (arr[i] !== 0) return false;
+            }
+            return true;
+        }
+
+        function isAllFF(arr) {
+            if (!arr || arr.length === 0) return true;
+            const len = arr.length;
+            for (let i = 0; i < len; i++) {
+                if (arr[i] !== 0xFF) return false;
+            }
+            return true;
+        }
+
+        function normalizeSaveBytes(value) {
+            if (!value) return null;
+            if (value instanceof Uint8Array) return value;
+            if (value instanceof ArrayBuffer) return new Uint8Array(value);
+            if (ArrayBuffer.isView(value)) {
+                return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+            }
+            if (typeof value === 'string') {
+                return base64ToUint8Array(value);
+            }
+            return null;
+        }
+
+        function isValidSaveBytes(arr) {
+            const bytes = normalizeSaveBytes(arr);
+            if (!bytes || bytes.length < 64) return false;
+            return !isAllZeros(bytes) && !isAllFF(bytes);
+        }
+
+        // 原生 IndexedDB 存档持久化能力（容量上 GB，完全规避 localStorage 5MB 配额爆掉问题）
+        const SaveDB = {
+            dbName: "uogameSavesDB",
+            storeName: "saves",
+            dbPromise: null,
+            getDB() {
+                if (!this.dbPromise) {
+                    this.dbPromise = new Promise((resolve, reject) => {
+                        const req = indexedDB.open(this.dbName, 1);
+                        req.onupgradeneeded = (e) => {
+                            const db = e.target.result;
+                            if (!db.objectStoreNames.contains(this.storeName)) {
+                                db.createObjectStore(this.storeName);
+                            }
+                        };
+                        req.onsuccess = (e) => resolve(e.target.result);
+                        req.onerror = (e) => reject(e.target.error);
+                    });
+                }
+                return this.dbPromise;
+            },
+            async set(key, value) {
+                try {
+                    const db = await this.getDB();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, "readwrite");
+                        const store = tx.objectStore(this.storeName);
+                        const req = store.put(value, key);
+                        req.onsuccess = () => resolve();
+                        req.onerror = (e) => reject(e.target.error);
+                    });
+                } catch(e) {
+                    console.error("IndexedDB set failed:", e);
+                }
+            },
+            async get(key) {
+                try {
+                    const db = await this.getDB();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, "readonly");
+                        const store = tx.objectStore(this.storeName);
+                        const req = store.get(key);
+                        req.onsuccess = () => resolve(req.result);
+                        req.onerror = (e) => reject(e.target.error);
+                    });
+                } catch(e) {
+                    console.error("IndexedDB get failed:", e);
+                    return null;
+                }
+            },
+            async delete(key) {
+                try {
+                    const db = await this.getDB();
+                    return new Promise((resolve, reject) => {
+                        const tx = db.transaction(this.storeName, "readwrite");
+                        const store = tx.objectStore(this.storeName);
+                        const req = store.delete(key);
+                        req.onsuccess = () => resolve();
+                        req.onerror = (e) => reject(e.target.error);
+                    });
+                } catch(e) {}
+            }
+        };
+
+        let isSavingToStorage = false;
+        async function saveToLocalStorage(cleanRomName, rawBytes) {
+            if (isSavingToStorage) return;
+            isSavingToStorage = true;
+            try {
+                const bytes = normalizeSaveBytes(rawBytes);
+                if (!isValidSaveBytes(bytes)) return;
+                const saveKey = `uogame_save_${gameId}_${cleanRomName}`;
+                
+                // 防缩水坏档拦截：若原有已保存的有效存档较大（>= 32KB），而本次准备写入的数据骤降至小于 1KB，拦截危险覆写保护高进度存档
+                if (!window._lastSavedByteMap) window._lastSavedByteMap = {};
+                const prevBytes = window._lastSavedByteMap[saveKey];
+                if (prevBytes && prevBytes.length >= 32768 && bytes.length < 1024) {
+                    console.warn(`⚠️ [安全防护] 检测到新存档体积异常骤降 (${prevBytes.length}B -> ${bytes.length}B)，已拦截覆写以保护已有高进度存档！`);
+                    return;
+                }
+
+                // 优化：计算存档指纹/哈希，若与上一次落盘内容完全一致则跳过重复写入与日志
+                if (prevBytes && prevBytes.length === bytes.length) {
+                    let isSame = true;
+                    for (let i = 0; i < bytes.length; i++) {
+                        if (prevBytes[i] !== bytes[i]) {
+                            isSame = false;
+                            break;
+                        }
+                    }
+                    if (isSame) {
+                        return; // 存档无变动，跳过重复写入
+                    }
+                }
+                window._lastSavedByteMap[saveKey] = bytes.slice();
+
+                // 1. 无安全隐患地异步存入 IndexedDB (突破 5MB 限制)
+                try {
+                    await SaveDB.set(saveKey, bytes);
+                } catch(e) {}
+
+                // 2. 尝试存入 localStorage (便于其它跨模块提取与调试)，若超配额则自动腾空间
+                let base64 = "";
+                try {
+                    base64 = uint8ArrayToBase64(bytes);
+                    localStorage.setItem(saveKey, base64);
+                    console.log(`💾 游戏存档已成功保存 (${saveKey}, 体积: ${bytes.length} bytes)`);
+                } catch(e) {
+                    console.warn("⚠️ localStorage 已满 (QuotaExceeded)，已自动使用 IndexedDB 保存，同时尝试释放空间:", e);
+                    try {
+                        // 清理 localStorage 中的旧 `uogame_save_` Base64 垃圾，防止塞满全局
+                        for (let i = localStorage.length - 1; i >= 0; i--) {
+                            const k = localStorage.key(i);
+                            if (k && k.startsWith("uogame_save_") && k !== saveKey) {
+                                localStorage.removeItem(k);
+                            }
+                        }
+                        if (!base64) base64 = uint8ArrayToBase64(bytes);
+                        localStorage.setItem(saveKey, base64);
+                    } catch(err) {
+                        // 即使 localStorage 无法再写，IndexedDB 已经安全落盘！
+                        console.log("💾 存档已由 IndexedDB 安全落盘保障！");
+                    }
+                }
+
+                // 3. 通知父页面（Home.jsx 大厅）存档已更新，传递 saveKey 和 base64，使父页面直接增量缓存，避免全盘重新读取
+                try {
+                    if (!base64) base64 = uint8ArrayToBase64(bytes);
+                    window.parent.postMessage({
+                        type: 'GAME_SAVE_UPDATED',
+                        gameId: gameId,
+                        romName: cleanRomName,
+                        saveKey: saveKey,
+                        base64: base64,
+                        size: bytes.length,
+                        timestamp: Date.now()
+                    }, '*');
+                } catch(e) {}
+            } finally {
+                isSavingToStorage = false;
+            }
+        }
+
+        function getLatestSaveBytes(triggerCoreSave = false) {
+            if (!window.EJS_emulator || !window.EJS_emulator.gameManager) return null;
+            const gm = window.EJS_emulator.gameManager;
+            if (!gm.FS) return null;
+
+            // 仅在明确指示需要主动请求核心时才调用，避免递归循环
+            if (triggerCoreSave) {
+                try {
+                    gm.saveSaveFiles();
+                } catch(e) {}
+            }
+
+            const targetRom = currentCleanRomName || "";
+            let mainPath = null;
+            try {
+                mainPath = gm.getSaveFilePath ? gm.getSaveFilePath() : null;
+            } catch(e) {}
+
+            // 优先检查内核报告的 mainPath，命中直接秒回，0ms 消耗
+            if (mainPath) {
+                try {
+                    if (gm.FS.analyzePath(mainPath).exists) {
+                        const raw = gm.FS.readFile(mainPath);
+                        const bytes = normalizeSaveBytes(raw);
+                        if (isValidSaveBytes(bytes)) return bytes;
+                    }
+                } catch(e) {}
+                try {
+                    const cleanMain = mainPath.split('?')[0];
+                    if (cleanMain !== mainPath && gm.FS.analyzePath(cleanMain).exists) {
+                        const raw = gm.FS.readFile(cleanMain);
+                        const bytes = normalizeSaveBytes(raw);
+                        if (isValidSaveBytes(bytes)) return bytes;
+                    }
+                } catch(e) {}
+            }
+
+            // 快速检查高频常见路径
+            const quickPaths = [
+                `/data/saves/${targetRom}.sav`,
+                `/data/saves/${targetRom}.srm`,
+                `/data/saves/${targetRom}.dsv`,
+                `/home/web_user/retroarch/userdata/saves/${targetRom}.sav`,
+                `/home/web_user/retroarch/userdata/saves/${targetRom}.srm`,
+                `/home/web_user/retroarch/userdata/saves/${targetRom}.dsv`
+            ];
+            for (const p of quickPaths) {
+                try {
+                    if (gm.FS.analyzePath(p).exists) {
+                        const raw = gm.FS.readFile(p);
+                        const bytes = normalizeSaveBytes(raw);
+                        if (isValidSaveBytes(bytes)) return bytes;
+                    }
+                } catch(e) {}
+            }
+
+            // 仅当上述路径均未命中时，才对当前核心子目录做兜底扫描
+            const coreName = (window.EJS_emulator.getCore ? window.EJS_emulator.getCore() : "") || "";
+            const candidateCores = coreName ? [coreName, coreName.toLowerCase()] : ["mgba", "fceumm", "snes9x", "melonds"];
+            for (const c of candidateCores) {
+                const subPaths = [
+                    `/data/saves/${c}/${targetRom}.sav`,
+                    `/data/saves/${c}/${targetRom}.srm`,
+                    `/data/saves/${c}/${targetRom}.dsv`,
+                    `/home/web_user/retroarch/userdata/saves/${c}/${targetRom}.sav`,
+                    `/home/web_user/retroarch/userdata/saves/${c}/${targetRom}.srm`,
+                    `/home/web_user/retroarch/userdata/saves/${c}/${targetRom}.dsv`
+                ];
+                for (const p of subPaths) {
+                    try {
+                        if (gm.FS.analyzePath(p).exists) {
+                            const raw = gm.FS.readFile(p);
+                            const bytes = normalizeSaveBytes(raw);
+                            if (isValidSaveBytes(bytes)) return bytes;
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            return null;
+        }
+
+        // 核心运行加载函数
+        async function loadGameRom(romName) {
+            const cleanRomName = romName.replace(/\.[^/.]+$/, "");
+            // 1. 如果点击的是当前已经在运行的同一款 ROM，仅收起列表，不重新加载也不销毁
+            if (window.EJS_emulator && currentCleanRomName === cleanRomName) {
+                console.log("🎮 点击的是当前正在游玩的游戏，直接收起列表");
+                document.getElementById("rom-selector-overlay").style.display = "none";
+                return;
+            }
+
+            showTransitionOverlay(romName, consoleNames[gameType] || gameType);
+
+            try {
+                window.parent.postMessage({
+                    type: 'GAME_ROM_CHANGED',
+                    gameId: gameId,
+                    romName: romName,
+                    cleanRomName: cleanRomName
+                }, '*');
+            } catch(e) {}
+
+            // 2. 只有在点击新的 ROM 时，保存旧存档并以干净的 WASM 虚拟机切入新游戏
+            if (window.EJS_emulator) {
+                try {
+                    if (window.__emulatorAutoSaveTimer) {
+                        clearInterval(window.__emulatorAutoSaveTimer);
+                        window.__emulatorAutoSaveTimer = null;
+                    }
+                    const bytes = getLatestSaveBytes();
+                    if (bytes && bytes.length > 0 && currentCleanRomName) {
+                        await saveToLocalStorage(currentCleanRomName, bytes);
+                    }
+                } catch(e) {
+                    console.warn("⚠️ 切换游戏保存旧进度失败:", e);
+                }
+                try {
+                    window.EJS_emulator.callEvent("exit");
+                } catch(e) {
+                    console.warn("⚠️ 退出旧虚拟机过程捕获到警告:", e);
+                }
+
+                saveRecentRom(romName);
+
+                const nextUrl = new URL(window.location.href);
+                nextUrl.searchParams.set("rom", romName);
+                window.location.replace(nextUrl.toString());
+                return;
+            }
+
+            document.getElementById("rom-selector-overlay").style.display = "none";
+            currentCleanRomName = cleanRomName;
+            window.__currentActiveRomName = romName;
+            document.getElementById("game").innerHTML = "";
+
+            // 保存至最近游玩列表
+            saveRecentRom(romName);
+
+            // 提前异步提取存盘数据，确保在模拟器 C 内核加载 ROM 前写入 VFS 虚拟硬盘！
+            const saveKey = `uogame_save_${gameId}_${cleanRomName}`;
+            let savedBytes = null;
+
+            try {
+                const idbBytes = await SaveDB.get(saveKey);
+                if (isValidSaveBytes(idbBytes)) {
+                    savedBytes = idbBytes;
+                    console.log(`✅ [预载] 从 IndexedDB 提取有效存档成功 (${savedBytes.length} bytes)`);
+                } else if (idbBytes && (isAllZeros(idbBytes) || isAllFF(idbBytes))) {
+                    console.log(`🧹 [预载] IndexedDB 存在全 0/0xFF 无效假存档，已被自动清理`);
+                    SaveDB.delete(saveKey);
+                }
+            } catch(e) {}
+
+            if (!savedBytes) {
+                const base64Data = localStorage.getItem(saveKey);
+                if (base64Data) {
+                    try {
+                        const decoded = base64ToUint8Array(base64Data);
+                        if (isValidSaveBytes(decoded)) {
+                            savedBytes = decoded;
+                            console.log(`✅ [预载] 从 localStorage 提取有效存档成功 (${savedBytes.length} bytes)`);
+                        } else if (decoded && (isAllZeros(decoded) || isAllFF(decoded))) {
+                            console.log(`🧹 [预载] localStorage 存在全 0/0xFF 无效假存档，已被自动清理`);
+                            localStorage.removeItem(saveKey);
+                        }
+                    } catch(e) {}
+                }
+            }
+
+            const gType = (gameType || '').toLowerCase();
+            const isGba = gType === 'gba' || (coreMapping[gameType] || '') === 'mgba';
+            const isNds = gType === 'nds' || (coreMapping[gameType] || '') === 'melonds';
+
+            if (!savedBytes) {
+                if (isNds) {
+                    console.log("🎮 NDS 预载：未找到有效旧存档，保持 null 让 MelonDS 自动检测芯片类型及大小全新建盘");
+                    savedBytes = null;
+                } else if (isGba) {
+                    console.log("🎮 GBA 预载：未找到有效旧存档，初始化 128KB 0xFF 芯片标头...");
+                    const full128k = new Uint8Array(131072);
+                    full128k.fill(0xFF);
+                    savedBytes = full128k;
+                }
+            }
+
+            window.EJS_preloadedSaveBytes = savedBytes;
+
+            const queryIsMobile = getQueryParam("isMobile");
+            const isMobileDevice = queryIsMobile === "true" 
+                || (queryIsMobile === null && (/iPhone|iPad|iPod|Android|Mobile/i.test(navigator.userAgent) || window.innerWidth <= 768));
+
+            if (isMobileDevice) {
+                document.body.classList.add("is-mobile");
+            } else {
+                document.body.classList.add("is-pc");
+            }
+
+            // 锁定 EmulatorJS 离线参数
+            window.EJS_player = '#game';
+            window.EJS_gameName = cleanRomName;
+            const encodedRomPath = romName.split('/').map(encodeURIComponent).join('/');
+            let gameUrl = `/play/${gameId}/${encodedRomPath}`;
+            if (token) {
+                gameUrl += `?token=${encodeURIComponent(token)}`;
+            }
+            window.EJS_gameUrl = gameUrl;
+            window.EJS_pathtodata = '/emulator/core/emulatorjs/data/'; // 本地绝对静态离线数据目录
+            window.EJS_core = coreMapping[gameType] || 'mgba';
+            const controlSchemeMapping = {
+                'MD': 'segaMD',
+                'SMS': 'segaMS',
+                'GG': 'segaGG',
+                'SEGACD': 'segaCD',
+                'SEGA32X': 'sega32x',
+                'SNES': 'snes',
+                'ARCADE': 'arcade',
+                'MAME': 'mame'
+            };
+            window.EJS_controlScheme = controlSchemeMapping[gameType];
+            window.EJS_settingsKey = `uogame-${String(gameType || '').toLowerCase()}`;
+            window.EJS_startOnLoaded = true;
+            window.EJS_DEBUG_XX = true; // 开启调试模式以正常加载未混淆源码（项目无min文件，必须保留）
+            window.EJS_language = 'zh-CN'; // 强制全界面中文本地化
+            window.EJS_askBeforeExit = false;
+            window.EJS_fixedSaveInterval = 10000; // 开启10秒定时存盘
+            
+            // 根据核心决定是否开启多线程支持 (如 dosbox_pure 等)
+            const threadRequiredCores = ['ppsspp', 'dosbox_pure', 'azahar'];
+            window.EJS_threads = threadRequiredCores.includes(window.EJS_core);
+            
+            // 1. 全局系统 BIOS 自动发现并注入支持 (如 PS1, 土星, SegaCD, 3DO 等)
+            const detectBiosFile = (roms) => {
+                const biosNames = [
+                    "scph1001.bin", "scph5501.bin", "scph7001.bin", "scph101.bin", "scph1000.bin",
+                    "saturn_bios.bin", "sega_101.bin", "mpr-17933.bin", "mpr-18811-mx.bin",
+                    "bios_cd_u.bin", "bios_cd_e.bin", "bios_cd_j.bin", "megacd_bios.bin",
+                    "panasonic_fz10.bin", "fz10.rom", "fz1.rom", "panasonic_fz1.bin",
+                    "pcfx.rom", "5200.rom", "gba_bios.bin", "bios7.bin", "bios9.bin", "firmware.bin",
+                    "neogeo.zip", "pgm.zip", "qsound.zip"
+                ];
+                for (let i = 0; i < roms.length; i++) {
+                    const name = roms[i].toLowerCase();
+                    if (biosNames.includes(name) || (name.includes('bios') && (name.endsWith('.bin') || name.endsWith('.rom') || name.endsWith('.zip')))) {
+                        return roms[i];
+                    }
+                }
+                return null;
+            };
+
+            const systemBiosCandidates = Array.from(new Set([
+                ...hiddenBiosList,
+                ...romsList.filter(item => item !== romName)
+            ]));
+            const systemBios = detectBiosFile(systemBiosCandidates);
+            if (systemBios && systemBios !== romName) {
+                const encodedBios = systemBios.split('/').map(encodeURIComponent).join('/');
+                const biosUrl = token ? `/play/${gameId}/${encodedBios}?token=${encodeURIComponent(token)}` : `/play/${gameId}/${encodedBios}`;
+                window.EJS_biosUrl = biosUrl;
+                window.EJS_biosUrls = [biosUrl];
+                console.log(`🔌 [系统BIOS] 已自动检索并注入系统 BIOS: ${systemBios}`);
+            } else {
+                window.EJS_biosUrl = undefined;
+                window.EJS_biosUrls = undefined;
+            }
+
+            // 2. 街机与 MAME 的额外 BIOS / Parent ROM 自动依赖支持
+            if (gameType === 'ARCADE' || gameType === 'MAME') {
+                window.EJS_dontExtractBIOS = true; // 保持 BIOS 和 Parent 的 ZIP 包物理完整性不解压写入
+                
+                // 收集街机依赖：BIOS 与父集合分开处理，避免重复下载
+                const arcadeDependency = romDependencyMap[romName] || {};
+
+                // 1. BIOS 依赖：系统级 BIOS ZIP（hiddenBiosList）+ API 显式 bios
+                const biosDeps = new Set();
+                hiddenBiosList.forEach(dep => biosDeps.add(dep));
+                (arcadeDependency.bios || []).forEach(dep => biosDeps.add(dep));
+
+                // 2. 父集合依赖：clone 游戏的主 ROM 在父集合里（如 kov111 -> kov.zip）
+                const parentDeps = new Set(arcadeDependency.parents || []);
+
+                // 兜底：若 API 未提供 parents，按文件名前缀推导（kov111 -> kov）
+                if (parentDeps.size === 0 && typeof romsList !== 'undefined') {
+                    const lowerRoms = romsList.map(r => String(r).toLowerCase());
+                    let base = romName.replace(/\.zip$/i, '').toLowerCase();
+                    while (base.length > 1) {
+                        base = base.slice(0, -1);
+                        const cand = base + '.zip';
+                        if (lowerRoms.includes(cand) && cand !== romName.toLowerCase()) {
+                            parentDeps.add(cand);
+                            break;
+                        }
+                    }
+                }
+
+                // 过滤掉当前游戏本身
+                const filterSelf = (s) => Array.from(s).filter(dep => dep && dep !== romName);
+                const biosList = filterSelf(biosDeps);
+                const parentList = filterSelf(parentDeps);
+
+                const biosUrls = biosList.map(dep => {
+                    const enc = dep.split('/').map(encodeURIComponent).join('/');
+                    return token ? `/play/${gameId}/${enc}?token=${encodeURIComponent(token)}` : `/play/${gameId}/${enc}`;
+                });
+                const parentUrls = parentList.map(dep => {
+                    const enc = dep.split('/').map(encodeURIComponent).join('/');
+                    return token ? `/play/${gameId}/${enc}?token=${encodeURIComponent(token)}` : `/play/${gameId}/${enc}`;
+                });
+
+                // 注入：BIOS 走 EJS_biosUrls，父集合走 EJS_gameParentUrls（互不重复）
+                window.EJS_biosUrls = biosUrls.length ? biosUrls : undefined;
+                window.EJS_biosUrl = biosUrls.length ? biosUrls[0] : undefined;
+                window.EJS_gameParentUrls = parentUrls.length ? parentUrls : undefined;
+                window.EJS_gameParentUrl = parentUrls.length ? parentUrls[0] : undefined;
+
+                if (biosUrls.length || parentUrls.length) {
+                    console.log(`🔌 [街机依赖] BIOS(${biosList.length}): ${biosList.join(', ')} | Parent(${parentList.length}): ${parentList.join(', ')}`);
+                }
+            } else {
+                window.EJS_gameParentUrls = undefined;
+                window.EJS_gameParentUrl = undefined;
+            }
+            
+            // 👈 核心修复：移动端设备强制开启 100% 移动模式 (Force Mobile) 确保虚拟按键图层绝不会因 iframe 触摸点初始化延迟而被隐藏
+            if (isMobileDevice) {
+                window.EJS_browserMode = 1;
+            }
+
+            window.EJS_Buttons = {
+                // 仅保留 6 个最核心必用按键：控制设置、选项、全屏、暂停/播放、重启、音量调节
+                gamepad: true,
+                settings: true,
+                fullscreen: true,
+                playPause: true,
+                restart: true,
+                volumeSlider: true,
+
+                // 精简隐藏多余/冗余功能
+                saveState: false,
+                loadState: false,
+                quickSave: false,
+                quickLoad: false,
+                saveSavFiles: false,
+                loadSavFiles: false,
+                cacheManager: false,
+                cheat: false,
+                contextMenu: false,
+                exitEmulation: false,
+                screenRecord: false,
+                screenshot: true
+            };
+
+            // 1. 游戏进入时：确认存盘落盘与手柄虚拟按键强制唤醒
+            window.EJS_onGameStart = async function() {
+                console.log("🎮 模拟器已启动！确认 VFS 存盘注入与移动端虚拟按键...");
+                
+                try {
+                    if (isMobileDevice && window.EJS_emulator) {
+                        try {
+                            if (window.EJS_emulator.virtualGamepad) {
+                                window.EJS_emulator.virtualGamepad.classList.add("ejs-vgamepad-active");
+                                window.EJS_emulator.virtualGamepad.style.display = "block";
+                                window.EJS_emulator.virtualGamepad.style.visibility = "visible";
+                                window.EJS_emulator.virtualGamepad.style.opacity = "1";
+                                console.log("📱 [移动端] 已强制激活虚拟触控手柄面板");
+                            }
+                            if (window.EJS_emulator.canvas) {
+                                window.EJS_emulator.canvas.classList.add("ejs-canvas-no-pointer");
+                            }
+                        } catch(e) {}
+                    }
+
+                    if (window.EJS_emulator && window.EJS_emulator.gameManager) {
+                        const gm = window.EJS_emulator.gameManager;
+                        if (gm.FS) {
+                            const safeWriteFile = (filePath, bytes) => {
+                                if (!gm.FS || !filePath || !bytes || bytes.length === 0) return;
+                                try {
+                                    const parts = filePath.split('/');
+                                    let currentPath = '';
+                                    for (let i = 0; i < parts.length - 1; i++) {
+                                        if (!parts[i]) continue;
+                                        currentPath += '/' + parts[i];
+                                        try {
+                                            if (!gm.FS.analyzePath(currentPath).exists) {
+                                                gm.FS.mkdir(currentPath);
+                                            }
+                                        } catch(e) {}
+                                    }
+                                    if (gm.FS.analyzePath(filePath).exists) {
+                                        gm.FS.unlink(filePath);
+                                    }
+                                    gm.FS.writeFile(filePath, bytes);
+                                } catch(e) {
+                                    console.warn(`⚠️ safeWriteFile 写入失败 (${filePath}):`, e);
+                                }
+                            };
+
+                            let mainPath = null;
+                            try {
+                                mainPath = gm.getSaveFilePath ? gm.getSaveFilePath() : null;
+                            } catch(e) {}
+
+                            const coreName = (window.EJS_emulator.getCore ? window.EJS_emulator.getCore() : "") || "";
+                            const candidateCoreNames = coreName ? Array.from(new Set([coreName, coreName.toLowerCase(), coreName.toUpperCase()])) : ["melonds", "mgba", "fceumm", "snes9x"];
+
+                            const possiblePaths = [];
+                            if (mainPath) {
+                                possiblePaths.push(mainPath);
+                                try { possiblePaths.push(decodeURIComponent(mainPath)); } catch(e) {}
+                                const cleanMainPath = mainPath.split('?')[0];
+                                possiblePaths.push(cleanMainPath);
+                                try { possiblePaths.push(decodeURIComponent(cleanMainPath)); } catch(e) {}
+                            }
+
+                            possiblePaths.push(`/data/saves/${cleanRomName}.sav`);
+                            possiblePaths.push(`/data/saves/${cleanRomName}.srm`);
+                            possiblePaths.push(`/data/saves/${cleanRomName}.dsv`);
+                            possiblePaths.push(`/home/web_user/retroarch/userdata/saves/${cleanRomName}.sav`);
+                            possiblePaths.push(`/home/web_user/retroarch/userdata/saves/${cleanRomName}.srm`);
+
+                            candidateCoreNames.forEach(c => {
+                                possiblePaths.push(`/data/saves/${c}/${cleanRomName}.sav`);
+                                possiblePaths.push(`/data/saves/${c}/${cleanRomName}.srm`);
+                                possiblePaths.push(`/data/saves/${c}/${cleanRomName}.dsv`);
+                                possiblePaths.push(`/home/web_user/retroarch/userdata/saves/${c}/${cleanRomName}.sav`);
+                                possiblePaths.push(`/home/web_user/retroarch/userdata/saves/${c}/${cleanRomName}.srm`);
+                            });
+
+                            const uniquePaths = Array.from(new Set(possiblePaths)).filter(Boolean);
+
+                            if (savedBytes && (isValidSaveBytes(savedBytes) || (isGba && savedBytes.length === 131072))) {
+                                try {
+                                    uniquePaths.forEach(p => {
+                                        safeWriteFile(p, savedBytes);
+                                    });
+                                    console.log(`✅ [onGameStart] 成功预载写入 VFS 存盘至 ${uniquePaths.length} 个候选路径 (${savedBytes.length} bytes)`);
+                                    gm.loadSaveFiles();
+                                } catch(e) {}
+                            } else if (isNds) {
+                                let cleanedAny = false;
+                                uniquePaths.forEach(p => {
+                                    try {
+                                        if (gm.FS.analyzePath(p).exists) {
+                                            console.log(`🧹 [NDS 启动] 首次运行强制清理 VFS 残留旧存盘文件: ${p}`);
+                                            gm.FS.unlink(p);
+                                            cleanedAny = true;
+                                        }
+                                    } catch(e) {}
+                                });
+                                if (cleanedAny) {
+                                    try { gm.FS.syncfs(false, () => {}); } catch(e) {}
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error("onGameStart initialization failed:", e);
+                } finally {
+                    hideTransitionOverlay();
+                    try {
+                        window.parent.postMessage({ type: 'GAME_STARTED' }, '*');
+                    } catch(e) {}
+
+                    // 启动 60 秒温和定时自动存盘巡检（防断电/死机丢档，避免 10 秒过频阻断 WASM 音画）
+                    try {
+                        if (window.__emulatorAutoSaveTimer) {
+                            clearInterval(window.__emulatorAutoSaveTimer);
+                            window.__emulatorAutoSaveTimer = null;
+                        }
+                        window.__emulatorAutoSaveTimer = setInterval(async () => {
+                            if (!window.EJS_emulator || !window.EJS_emulator.gameManager) return;
+                            try {
+                                const target = currentCleanRomName || cleanRomName;
+                                if (target) {
+                                    await window.EJS_flushLatestSaveToStorage(target);
+                                }
+                            } catch(e) {}
+                        }, 60000);
+
+                        // 额外挂钩内核原生 saveSaveFiles 事件
+                        if (window.EJS_emulator && typeof window.EJS_emulator.on === 'function') {
+                            window.EJS_emulator.on("saveSaveFiles", (saveData) => {
+                                const bytes = normalizeSaveBytes(saveData) || getLatestSaveBytes(false);
+                                if (bytes && bytes.length > 0 && (currentCleanRomName || cleanRomName)) {
+                                    saveToLocalStorage(currentCleanRomName || cleanRomName, bytes);
+                                }
+                            });
+                        }
+                    } catch(e) {
+                        console.warn("启动定时存盘巡检失败:", e);
+                    }
+                }
+            };
+
+            // 2. 自动定时存盘回调
+            window.EJS_onSaveUpdate = function(e) {
+                const target = currentCleanRomName || cleanRomName;
+                if (e && e.save) {
+                    saveToLocalStorage(target, e.save);
+                } else {
+                    const bytes = getLatestSaveBytes(false);
+                    if (bytes) saveToLocalStorage(target, bytes);
+                }
+            };
+
+            // 3. 用户手动存盘备份支持
+            window.EJS_onSaveSave = function(e) {
+                const target = currentCleanRomName || cleanRomName;
+                if (e && e.save) {
+                    saveToLocalStorage(target, e.save);
+                } else {
+                    const bytes = getLatestSaveBytes(false);
+                    if (bytes) saveToLocalStorage(target, bytes);
+                }
+            };
+
+            window.EJS_flushLatestSaveToStorage = async function(targetRomName = currentCleanRomName || cleanRomName) {
+                if (!targetRomName) return false;
+                try {
+                    const bytes = getLatestSaveBytes(true);
+                    if (bytes && bytes.length > 0) {
+                        await saveToLocalStorage(targetRomName, bytes);
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn("⚠️ 主动落盘最新存档失败:", e);
+                }
+                return false;
+            };
+
+            // 4. 模拟器退出回调
+            window.EJS_onExit = function() {
+                console.log("🎮 模拟器退出，检查最新进度...");
+                if (window.__emulatorAutoSaveTimer) {
+                    clearInterval(window.__emulatorAutoSaveTimer);
+                    window.__emulatorAutoSaveTimer = null;
+                }
+                window.EJS_flushLatestSaveToStorage(cleanRomName);
+            };
+
+            // 5. 移动端生命周期：切后台/息屏/应用隐藏/页面销毁时立即紧急强制落盘
+            const autoFlushSave = () => {
+                const target = currentCleanRomName || cleanRomName;
+                if (target) {
+                    window.EJS_flushLatestSaveToStorage(target);
+                }
+            };
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    autoFlushSave();
+                }
+            });
+            window.addEventListener('beforeunload', autoFlushSave);
+            window.addEventListener('pagehide', autoFlushSave);
+            window.addEventListener('freeze', autoFlushSave);
+
+            // 引入引导程序
+            const loaderScript = document.createElement("script");
+            loaderScript.src = "/emulator/core/emulatorjs/data/loader.js?_t=" + Date.now();
+            document.body.appendChild(loaderScript);
+        }
+
+        // 关闭 ROM 选择器
+        window.closeRomSelector = function() {
+            console.log("🎮 关闭游戏内 ROM 选择器");
+            document.getElementById("rom-selector-overlay").style.display = "none";
+        };
+
+        // 大厅主动切换 ROM
+        window.openRomSelector = function() {
+            console.log("🎮 触发游戏内 ROM 选择器");
+            document.getElementById("rom-selector-overlay").style.display = "flex";
+        };
+
+        // 切换 ROM 选择器显隐（用于顶部“游戏列表”按钮再次点击时进行收起/展开）
+        window.toggleRomSelector = function() {
+            const overlay = document.getElementById("rom-selector-overlay");
+            const isVisible = window.getComputedStyle(overlay).display !== "none";
+            if (isVisible) {
+                window.closeRomSelector();
+            } else {
+                window.openRomSelector();
+            }
+        };
+
+        // 打开按键与手柄设置
+        window.openControlSettings = function() {
+            console.log("🎮 打开按键与手柄设置弹窗");
+            if (window.EJS_emulator && window.EJS_emulator.controlMenu) {
+                window.EJS_emulator.controlMenu.style.display = "";
+            }
+        };
+
+        // 切换按键与手柄设置弹窗显隐
+        window.toggleControlSettings = function() {
+            console.log("🎮 切换按键与手柄设置弹窗显隐");
+            if (window.EJS_emulator && window.EJS_emulator.controlMenu) {
+                const isHidden = window.EJS_emulator.controlMenu.style.display === "none";
+                window.EJS_emulator.controlMenu.style.display = isHidden ? "" : "none";
+            }
+        };
+
+        // 监听来自父页面的指令消息
+        window.addEventListener("message", function(event) {
+            if (!event.data) return;
+            if (event.data.type === "TOGGLE_CONTROL_SETTINGS" || event.data.type === "OPEN_CONTROL_SETTINGS") {
+                window.toggleControlSettings();
+            }
+        });
+
+
+
+        if (gameId) {
+            fetchRoms();
+        } else {
+            document.getElementById("rom-list").innerHTML = '<div class="empty-tip" style="color:#ef4444;">错误: 缺少游戏挂载 ID</div>';
+        }
+    </script>
+</body>
+</html>

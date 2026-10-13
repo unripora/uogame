@@ -1,0 +1,91 @@
+# ============ 依赖 / 构建产物 ============
+node_modules/
+web/node_modules/
+web/dist/
+dist/
+build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.apk
+*.swf
+*.rom
+*.nes
+*.gba
+*.bin
+*.zip
+
+# ============ 敏感文件（严禁入库）============
+# JWT 密钥 / 数据库 / 令牌
+jwt.secret
+server/data/jwt.secret
+data/jwt.secret
+*.secret
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+tmp/_tok.txt
+tmp/_pack/token.txt
+token.txt
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+
+# ============ 运行时数据 / 游戏库（体积巨大）============
+# 根级运行时数据目录（服务实际使用）：含 jwt.secret / 数据库 / 游戏
+data/
+game/
+GameProcessing/
+server/data/games/
+server/data/uploads/
+server/data/images/
+server/data/logs/
+server/data/uogame-dev.exe
+server/data/uogame-dev.exe~
+server/_srv.exe
+_srv.exe
+_srv.exe~
+
+# ============ 第三方仓库（单独引用，不纳入本仓库）============
+external/
+
+# ============ 临时工作目录 ============
+tmp/
+_exp26/
+*.pyc
+__pycache__/
+
+# ============ 编辑器 / 系统 ============
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# ============ 非源码内容（项目私有，不入公开仓库）============
+docs/
+.trae/
+
+# ============ 测试 / 杂项 ============
+test.txt
+*_test_output.txt
+
+# ============ gamegrab 抓取器：产物与临时脚本 ============
+# 抓取产物（体积巨大，且含第三方版权资源，严禁入库）
+tools/gamegrab/grab_out/
+tools/gamegrab/**/grab_out/
+# 根目录临时探针 / 调试脚本与输出
+_*.py
+_*.ps1
+_*.txt
+_*.json
+# 抓取器本地运行输出
+tools/gamegrab/*.zip
+tools/gamegrab/_*/
