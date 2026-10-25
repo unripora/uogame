@@ -116,6 +116,7 @@ type Game struct {
 	Tag         string  `gorm:"type:text;default:'default'" json:"tag"` // 兼容旧字段：= Tags 首项
 	PlatformTag string  `gorm:"type:text" json:"platform_tag"`          // 平台标签（按文件类型自动识别，如 红白机 NES / 任天堂 GBA / HTML5）
 	GameType    string  `gorm:"type:text;default:'H5'" json:"game_type"`
+	OnsArgs     string  `gorm:"type:text" json:"ons_args"` // ONS 引擎启动参数（JSON 数组字符串，如 ["--enc:gbk"]）
 	HotTime     float64 `gorm:"default:0" json:"hot_time"`
 	ContentHash string  `gorm:"type:text;index" json:"content_hash"` // 导入内容指纹（去重判据）
 	Aliases     string  `gorm:"type:text" json:"aliases"`             // 别名（曾用名），JSON 数组字符串，如 ["玩家国度","开店我最牛"]

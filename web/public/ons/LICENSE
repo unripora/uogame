@@ -1,0 +1,13 @@
+OnscripterYuri WebAssembly build (onsyuri.html / onsyuri.js / onsyuri.wasm)
+
+Copyright (c) YuriSizuku
+Upstream: https://github.com/YuriSizuku/OnscripterYuri
+
+This engine is licensed under the GNU General Public License v3.0 (GPL-3.0).
+The full license text is available at:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+onsyuri.js / onsyuri.wasm are bundled unmodified. onsyuri.html is adapted
+minimally to accept a dynamic manifest URL via the ?index= query parameter.
+All bundled/adapted files remain under GPL-3.0; any distribution of modified
+files must follow the same GPL-3.0 terms with corresponding source code.

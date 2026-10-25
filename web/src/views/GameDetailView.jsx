@@ -346,10 +346,12 @@ export default function GameDetailView({ game, onBack, onPlay }) {
           </section>
         </div>
 
-        {/* 备注：ROM / Flash 由对应内核承载，此处仅作提示 */}
+        {/* 备注：ROM / Flash 由对应内核承载，ONS 由浏览器本地引擎承载，此处仅作提示 */}
         {kind !== 'h5' && (
           <p className="mt-3 text-center text-xs text-theme-sub">
-            该游戏将使用模拟器内核运行（{gameTypeLabel(game.game_type)}）
+            {kind === 'ons'
+              ? `该游戏将在浏览器本地运行（${gameTypeLabel(game.game_type)}）`
+              : `该游戏将使用模拟器内核运行（${gameTypeLabel(game.game_type)}）`}
           </p>
         )}
       </div>

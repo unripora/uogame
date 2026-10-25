@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,6 +39,9 @@ type GameConfig struct {
 	Tag           string   `json:"tag"`
 	Tags          []string `json:"tags,omitempty"`
 	Aliases       []string `json:"aliases,omitempty"` // 别名（曾用名），跨机可移植
+
+	GameType string   `json:"game_type,omitempty"` // 游戏类型（缺省 H5；ONS 表示 NScripter 视觉小说）
+	OnsArgs  []string `json:"ons_args,omitempty"`  // ONS 引擎启动参数（如 ["--enc:gbk"]）
 }
 
 // GameConfigCategoryIDs 取配置中的分类（优先数组，回退单值）
@@ -480,6 +484,19 @@ func DeleteGame(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
+// GetGame 获取单个游戏详情（详情页深链接 /game/:id 使用）
+func GetGame(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var game models.Game
+	if err := database.DB.First(&game, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Game not found"})
+		return
+	}
+	games := []models.Game{game}
+	loadGameRelations(games)
+	c.JSON(http.StatusOK, games[0])
+}
+
 // GetGameCover 返回游戏封面图片
 func GetGameCover(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
@@ -530,6 +547,8 @@ func GameConfigHandler(c *gin.Context) {
 		IsHidden:    game.IsHidden,
 		IsLandscape: game.IsLandscape,
 		Tag:         game.Tag,
+		GameType:    game.GameType,
+		OnsArgs:     parseOnsArgs(game.OnsArgs),
 	})
 }
 
@@ -727,6 +746,107 @@ func scanRoms(dir, prefix string, maxDepth int) []string {
 	return result
 }
 
+// onsLazyloadThreshold 超过该体积（字节）时清单启用 lazyload，避免首屏一次性拉取整包
+const onsLazyloadThreshold = 64 << 20
+
+// GetOnsManifest 返回 OnscripterYuri 所需的游戏文件清单
+// GET /api/games/:id/ons-manifest?token=...（需登录）
+// 契约（对应 web/public/ons/onsyuri.html 中的 g_onsyuri_index）：
+//
+//	{ title, gamedir, savedir, args, lazyload, files: [{path, url}] }
+func GetOnsManifest(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var game models.Game
+	if err := database.DB.First(&game, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Game not found"})
+		return
+	}
+
+	base := resolveGamePath(game.MountPath)
+	if base == "" {
+		base = filepath.Join(gamesDir(), sanitizeDirName(game.Name))
+	}
+	info, err := os.Stat(base)
+	if err != nil || !info.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "游戏文件目录不存在"})
+		return
+	}
+
+	token := c.Query("token")
+	prefix := fmt.Sprintf("/play/%d/", game.ID)
+	files, total := collectOnsFiles(base, "", prefix, token, 8)
+	if len(files) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到 ONS 游戏文件"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"title":    game.Name,
+		"gamedir":  fmt.Sprintf("/onsyuri/game%d", game.ID),
+		"savedir":  fmt.Sprintf("/onsyuri_save/game%d", game.ID),
+		"args":     decodeOnsArgs(game.OnsArgs),
+		"lazyload": total > onsLazyloadThreshold,
+		"files":    files,
+	})
+}
+
+// onsFileEntry 清单中的单个文件项
+type onsFileEntry struct {
+	Path string `json:"path"`
+	URL  string `json:"url"`
+}
+
+// collectOnsFiles 递归扫描 ONS 游戏目录，返回文件清单与总体积
+// 跳过隐藏文件/目录与 config.json（避免把元数据挂进游戏根目录）；relDir 为当前相对目录
+func collectOnsFiles(dir, relDir, prefix, token string, maxDepth int) ([]onsFileEntry, int64) {
+	files := make([]onsFileEntry, 0, 64)
+	var total int64
+	if maxDepth < 0 {
+		return files, total
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return files, total
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || name == "config.json" {
+			continue
+		}
+		rel := name
+		if relDir != "" {
+			rel = relDir + "/" + name
+		}
+		full := filepath.Join(dir, name)
+		if e.IsDir() {
+			sub, subTotal := collectOnsFiles(full, rel, prefix, token, maxDepth-1)
+			files = append(files, sub...)
+			total += subTotal
+			continue
+		}
+		info, ierr := e.Info()
+		if ierr != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		u := prefix + escapeURLPath(rel)
+		if token != "" {
+			u += "?token=" + url.QueryEscape(token)
+		}
+		files = append(files, onsFileEntry{Path: rel, URL: u})
+		total += info.Size()
+	}
+	return files, total
+}
+
+// escapeURLPath 按 / 分段转义相对路径（兼容中文/空格文件名）
+func escapeURLPath(rel string) string {
+	parts := strings.Split(rel, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	return strings.Join(parts, "/")
+}
+
 // gameImageExts 详情页轮播可用的图片扩展名（白名单）
 var gameImageExts = map[string]bool{
 	".png":  true,
@@ -920,6 +1040,12 @@ var gameFileMimeTypes = map[string]string{
 	".woff2": "font/woff2",
 	".ttf":   "font/ttf",
 	".otf":   "font/otf",
+	// ONS（NScripter）资源：脚本/归档/压缩包按二进制下发（ONScripter 自行解压）
+	".dat": "application/octet-stream",
+	".nsa": "application/octet-stream",
+	".ns2": "application/octet-stream",
+	".nbz": "application/octet-stream",
+	".spb": "application/octet-stream",
 }
 
 // contentTypeForGameFile 依据扩展名返回 MIME；未知类型回退 application/octet-stream
@@ -966,6 +1092,8 @@ func ExportGame(c *gin.Context) {
 		Tag:           g.Tag,
 		Tags:          g.Tags,
 		Aliases:       parseAliases(g.Aliases),
+		GameType:      g.GameType,
+		OnsArgs:       parseOnsArgs(g.OnsArgs),
 	}); err != nil {
 		return
 	}
@@ -993,6 +1121,8 @@ func ImportGame(c *gin.Context) {
 	if onDuplicate != "overwrite" {
 		onDuplicate = "skip"
 	}
+	// 手动填写的 config.json（优先级高于 zip 内的同名文件；填写后 zip 可不再包含 config.json）
+	manualCfg := strings.TrimSpace(c.PostForm("config_json"))
 
 	tmp, terr := saveUploadTemp(fileHeader)
 	if terr != nil {
@@ -1010,13 +1140,23 @@ func ImportGame(c *gin.Context) {
 
 	var cfg *GameConfig
 	found := false
-	for _, f := range zr.File {
-		if f.Name == "config.json" {
-			found = true
-			if gc, ok := decodeGameConfig(f); ok {
-				cfg = gc
+	if manualCfg != "" {
+		gc, ok := parseGameConfigBytes([]byte(manualCfg))
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手动填写的 config.json 不是合法的 UTF-8 JSON"})
+			return
+		}
+		cfg = gc
+		found = true
+	} else {
+		for _, f := range zr.File {
+			if f.Name == "config.json" {
+				found = true
+				if gc, ok := decodeGameConfig(f); ok {
+					cfg = gc
+				}
+				break
 			}
-			break
 		}
 	}
 	// 多游戏包：根无 config.json，但含 <数字>/config.json（来自批量导出）
@@ -1030,6 +1170,17 @@ func ImportGame(c *gin.Context) {
 	}
 	if cfg == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "config.json 解析失败：文件不是合法 UTF-8 无 BOM 的 JSON"})
+		return
+	}
+	// 表单兜底：手填配置未写 name/game_type 时，取导入界面上的名称与类型
+	if strings.TrimSpace(cfg.Name) == "" {
+		cfg.Name = strings.TrimSpace(c.PostForm("name"))
+	}
+	if strings.TrimSpace(cfg.GameType) == "" {
+		cfg.GameType = strings.TrimSpace(c.PostForm("game_type"))
+	}
+	if strings.TrimSpace(cfg.Name) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少游戏名称（config.json 的 name 或导入界面的游戏名称）"})
 		return
 	}
 
@@ -1080,6 +1231,13 @@ func ImportGame(c *gin.Context) {
 			"tag":          cfg.Tag,
 			"content_hash": hash,
 			"size_bytes":   computeGameSize(dir),
+		}
+		// ONS 类型与启动参数（配置为空时保持既有值）
+		if gt := strings.ToUpper(strings.TrimSpace(cfg.GameType)); gt != "" {
+			updates["game_type"] = gt
+		}
+		if oa := encodeOnsArgs(cfg.OnsArgs); oa != "" {
+			updates["ons_args"] = oa
 		}
 		// 封面处理：data URI 解码落盘 / 包内候选图提取（覆盖原 base64/空值）
 		if cover := resolveImportedCover(cfg, zr.File, dir, ""); cover != "" {
@@ -1417,10 +1575,50 @@ func buildGameFromConfig(cfg *GameConfig, hash string) (models.Game, error) {
 		IsHidden:    cfg.IsHidden,
 		IsLandscape: cfg.IsLandscape,
 		Tag:         legacyTag,
+		GameType:    strings.ToUpper(strings.TrimSpace(cfg.GameType)),
+		OnsArgs:     encodeOnsArgs(cfg.OnsArgs),
 		ContentHash: hash,
 		Aliases:     encodeAliases(cfg.Aliases),
 		CreatedAt:   time.Now().Unix(),
 	}, nil
+}
+
+// encodeOnsArgs 将 ONS 启动参数序列化为 JSON 字符串（空数组返回空串）
+func encodeOnsArgs(args []string) string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a = strings.TrimSpace(a); a != "" {
+			out = append(out, a)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+// parseOnsArgs 解析 Game.OnsArgs（空/非法返回 nil）
+func parseOnsArgs(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var args []string
+	if json.Unmarshal([]byte(raw), &args) != nil {
+		return nil
+	}
+	return args
+}
+
+// decodeOnsArgs 解析 Game.OnsArgs；为空或非法时回退默认参数（中文汉化包默认 GBK 编码）
+func decodeOnsArgs(raw string) []string {
+	if args := parseOnsArgs(raw); len(args) > 0 {
+		return args
+	}
+	return []string{"--enc:gbk"}
 }
 
 // platformTagFromZip 依据 zip 内条目名推断平台标签（供导入时自动打标签）
@@ -1847,6 +2045,11 @@ func decodeGameConfig(f *zip.File) (*GameConfig, bool) {
 	if err != nil {
 		return nil, false
 	}
+	return parseGameConfigBytes(data)
+}
+
+// parseGameConfigBytes 解析 config.json 内容（自动剥离 UTF-8 BOM）
+func parseGameConfigBytes(data []byte) (*GameConfig, bool) {
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF}) // 剥离 UTF-8 BOM
 	var gc GameConfig
 	if json.Unmarshal(data, &gc) != nil {

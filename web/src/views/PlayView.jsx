@@ -15,6 +15,7 @@ import { useRatings } from '../hooks/useRatings'
 //   H5    → iframe src = /play/{id}/index.html
 //   ROM   → iframe src = /emulator/emulatorjs.html  （内含 /play/{id}/{rom} 与 /api/games/{id}/roms）
 //   FLASH → iframe src = /emulator/ruffle.html
+//   ONS   → iframe src = /ons/onsyuri.html?index=<manifest> （manifest 含文件清单与启动参数）
 
 // 倍速档位（H5 适用：基于 rAF / 时间源的引擎可生效，其它引擎不保证）
 const SPEED_PRESETS = [0.5, 1, 1.5, 2, 3, 4]
@@ -160,6 +161,13 @@ export default function PlayView({ game, onExit }) {
           // 播放器页为前端本地资产（同源），其中的游戏文件地址由源决定
           if (alive)
             setSrc(`/emulator/ruffle.html?gameId=${game.id}${tokenQuery}`)
+        } else if (kind === 'ons') {
+          // ONS：引擎页通过 ?index= 拉取清单，再按清单中的 /play/{id}/... 拉游戏文件
+          const manifest = `/api/games/${game.id}/ons-manifest${
+            token ? `?token=${encodeURIComponent(token)}` : ''
+          }`
+          if (alive)
+            setSrc(`/ons/onsyuri.html?index=${encodeURIComponent(manifest)}`)
         } else {
           const roms = await getJSON(API.gameRoms(game.id))
           const list = Array.isArray(roms) ? roms : []

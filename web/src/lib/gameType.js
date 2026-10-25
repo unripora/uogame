@@ -5,6 +5,7 @@ export const GAME_TYPES = [
   { value: 'H5', label: 'H5 网页小游戏 (标准单屏/模拟手机框)', kind: 'h5' },
   { value: 'H5_FULL', label: 'H5 全屏网页 (整页自适应/支持滚动/无外框)', kind: 'h5' },
   { value: 'FLASH', label: 'Flash 游戏 (Adobe Flash SWF)', kind: 'flash' },
+  { value: 'ONS', label: 'ONS (NScripter 视觉小说)', kind: 'ons' },
   { value: 'FC', label: 'FC (任天堂 NES)', kind: 'rom' },
   { value: 'SNES', label: 'SNES/SFC (超级任天堂)', kind: 'rom' },
   { value: 'N64', label: 'N64 (任天堂64)', kind: 'rom' },
@@ -133,6 +134,7 @@ export function allowedExtensions(type) {
 export function playKind(type) {
   const t = String(type || 'H5').toUpperCase()
   if (t === 'FLASH') return 'flash'
+  if (t === 'ONS') return 'ons'
   if (t === 'H5' || t === 'H5_FULL' || t === 'HTML5') return 'h5'
   return 'rom'
 }

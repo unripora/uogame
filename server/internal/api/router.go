@@ -51,8 +51,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		auth.GET("/games/changes", handlers.GetGamesChanges)
 		auth.GET("/tags", handlers.ListTags)
 		auth.GET("/games/config.json", handlers.GameConfigHandler)
+		auth.GET("/games/:id", handlers.GetGame)
 		auth.GET("/games/:id/cover", handlers.GetGameCover)
 		auth.GET("/games/:id/roms", handlers.ListGameRoms)
+		auth.GET("/games/:id/ons-manifest", handlers.GetOnsManifest)
 		auth.GET("/games/:id/images", handlers.GetGameImages)
 		auth.GET("/games/:id/play/*file", handlers.ServeGameFile)
 

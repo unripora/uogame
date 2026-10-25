@@ -12,6 +12,14 @@ import { API } from '../../api/endpoints'
 import { postJSON, uploadWithProgress } from '../../api/client'
 import { GAME_TYPES, gameTypeByExt, SOURCE_ACCEPT } from '../../lib/gameType'
 
+// 手动填写 config.json 的模板
+const CONFIG_TEMPLATE = `{
+  "name": "游戏名",
+  "game_type": "ONS",
+  "ons_args": ["--enc:gbk"],
+  "tags": ["ONS"]
+}`
+
 // 导入处理面板
 // 功能：
 //   1) 游戏包 (.zip) 批量导入
@@ -38,6 +46,8 @@ export default function ImportPanel() {
       defaultName: f.name.replace(/\.zip$/i, ''),
       game_type: 'H5',
       category_id: 0,
+      configText: '',
+      showConfig: false,
     }))
     setQueue((q) => [...q, ...next])
     setClassified(false)
@@ -71,6 +81,10 @@ export default function ImportPanel() {
     fd.append('name', item.defaultName || item.name)
     fd.append('game_type', item.game_type)
     fd.append('category_id', String(item.category_id || 0))
+    // 手动填写的 config.json：优先级高于压缩包内文件；zip 因此可以不带配置
+    if (item.configText && item.configText.trim()) {
+      fd.append('config_json', item.configText)
+    }
     if (onDuplicate === 'overwrite') {
       // 重复时覆盖（游戏包 / 源文件均支持）
       fd.append('on_duplicate', 'overwrite')
@@ -342,7 +356,7 @@ export default function ImportPanel() {
         <Upload size={28} className="mx-auto mb-2 text-theme-sub" />
         <p className="mb-1 text-sm text-theme-text">
           {mode === 'zip'
-            ? '请选择游戏包 (.zip)，压缩包根目录必须包含 config.json'
+            ? '请选择游戏包 (.zip)，根目录含 config.json；也可添加后点「config.json」手动填写'
             : '请选择源文件（ROM / SWF / HTML），类型按扩展名自动识别，可手动修改；同名将被覆盖'}
         </p>
         <Button
@@ -439,12 +453,42 @@ export default function ImportPanel() {
                   </option>
                 ))}
               </Select>
+              {mode === 'zip' && (
+                <button
+                  className="text-xs font-bold text-theme-sub hover:text-theme-accent"
+                  onClick={() => updateItem(idx, { showConfig: !item.showConfig })}
+                  title="手动填写 config.json（优先于压缩包内配置）"
+                >
+                  config.json
+                </button>
+              )}
               <button
                 className="text-theme-sub hover:text-rose-500"
                 onClick={() => removeItem(idx)}
               >
                 <X size={16} />
               </button>
+              {mode === 'zip' && item.showConfig && (
+                <div className="w-full">
+                  <textarea
+                    className="h-32 w-full resize-y rounded-xl border border-theme-border bg-theme-panel px-3 py-2 font-mono text-xs text-theme-text placeholder:text-theme-sub focus:border-theme-accent focus:outline-none"
+                    placeholder={CONFIG_TEMPLATE}
+                    value={item.configText}
+                    onChange={(e) => updateItem(idx, { configText: e.target.value })}
+                  />
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-theme-sub">
+                    <span>
+                      留空则使用 zip 内的 config.json；填写后以这里为准（zip 可不带 config.json）
+                    </span>
+                    <button
+                      className="ml-auto font-bold text-theme-accent"
+                      onClick={() => updateItem(idx, { configText: CONFIG_TEMPLATE })}
+                    >
+                      填入模板
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
